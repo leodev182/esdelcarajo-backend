@@ -13,11 +13,365 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Modelo temporal básico
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum Gender {
+  MEN
+  WOMEN
+  KIDS
+}
+
+enum Size {
+  S
+  M
+  L
+  XL
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAGO_CONFIRMADO
+  EN_CAMINO
+  ENTREGADO
+  CANCELADO
+}
+
+enum PaymentMethod {
+  TRANSFERENCIA
+  PAGO_MOVIL
+  ZELLE
+  EFECTIVO
+  MERCADO_PAGO
+}
+
 model User {
-  id        Int      @id @default(autoincrement())
+  id        String   @id @default(uuid())
   email     String   @unique
   name      String?
+  nickname  String?
+  avatar    String?
+  googleId  String   @unique
+  phone     String?
+  role      Role     @default(USER)
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relaciones
+  addresses Address[]
+  cart      Cart?
+  orders    Order[]
+  favorites Favorite[]
+
+  @@index([email])
+  @@index([googleId])
+  @@index([nickname])
+}
+
+model Address {
+  id     String @id @default(uuid())
+  userId String
+  alias  String
+
+  // Datos de contacto
+  fullName String
+  phone    String
+
+  // Dirección completa
+  state        String
+  city         String
+  municipality String?
+  address      String
+  zipCode      String?
+  reference    String?
+
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  orders Order[]
+
+  @@index([userId])
+}
+
+model Category {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  slug        String  @unique
+  description String? @db.Text
+  color       String
+  icon        String?
+  order       Int     @default(0)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  subcategories Subcategory[]
+  products      Product[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([order])
+}
+
+model Subcategory {
+  id          String  @id @default(uuid())
+  categoryId  String
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  icon        String?
+  order       Int     @default(0)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  category Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId])
+  @@index([slug])
+  @@index([isActive])
+}
+
+model Product {
+  id          String @id @default(uuid())
+  name        String
+  slug        String @unique
+  description String @db.Text
+
+  // Categorización
+  categoryId    String
+  subcategoryId String?
+
+  // SEO
+  metaTitle       String?
+  metaDescription String?
+
+  // Estado
+  isActive   Boolean  @default(true)
+  isFeatured Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Relaciones
+  category    Category         @relation(fields: [categoryId], references: [id])
+  subcategory Subcategory?     @relation(fields: [subcategoryId], references: [id])
+  variants    ProductVariant[]
+  images      ProductImage[]
+  favorites   Favorite[]
+  tags        ProductTag[]
+
+  @@index([slug])
+  @@index([categoryId])
+  @@index([subcategoryId])
+  @@index([isActive])
+  @@index([isFeatured])
+}
+
+model ProductVariant {
+  id        String @id @default(uuid())
+  productId String
+
+  // Atributos de la variante
+  gender   Gender
+  size     Size
+  color    String
+  colorHex String?
+
+  // Inventario
+  sku   String  @unique
+  stock Int     @default(0)
+  price Decimal @db.Decimal(10, 2)
+
+  // Estado
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([productId, gender, size, color])
+  @@index([productId])
+  @@index([sku])
+  @@index([stock])
+}
+
+model ProductImage {
+  id        String @id @default(uuid())
+  productId String
+  url       String
+  alt       String
+  order     Int    @default(0)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([order])
+}
+
+model Cart {
+  id     String @id @default(uuid())
+  userId String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CartItem[]
+
+  @@index([userId])
+}
+
+model CartItem {
+  id        String @id @default(uuid())
+  cartId    String
+  variantId String
+  quantity  Int    @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  expiresAt DateTime
+
+  // Relaciones
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@unique([cartId, variantId])
+  @@index([cartId])
+  @@index([variantId])
+  @@index([expiresAt])
+}
+
+model Order {
+  id        String @id @default(uuid())
+  userId    String
+  addressId String
+
+  // Totales (sin envío, se acuerda por WhatsApp)
+  subtotal Decimal @db.Decimal(10, 2)
+  total    Decimal @db.Decimal(10, 2)
+
+  // Estado del pedido
+  status OrderStatus @default(PENDING_PAYMENT)
+
+  // Método de pago
+  paymentMethod PaymentMethod
+  paymentProof  String?
+
+  // Notas
+  customerNotes String? @db.Text
+  adminNotes    String? @db.Text
+
+  // Timestamps importantes
+  paidAt      DateTime?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  user    User        @relation(fields: [userId], references: [id])
+  address Address     @relation(fields: [addressId], references: [id])
+  items   OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String @id @default(uuid())
+  orderId   String
+  variantId String
+
+  // Snapshot del producto al momento de compra
+  productName   String
+  variantSize   Size
+  variantColor  String
+  variantGender Gender
+  price         Decimal @db.Decimal(10, 2)
+  quantity      Int
+  subtotal      Decimal @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  order   Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id])
+
+  @@index([orderId])
+  @@index([variantId])
+}
+
+model Favorite {
+  id        String @id @default(uuid())
+  userId    String
+  productId String
+
+  createdAt DateTime @default(now())
+
+  // Relaciones
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+  @@index([userId])
+  @@index([productId])
+}
+
+model Tag {
+  id    String  @id @default(uuid())
+  name  String  @unique
+  slug  String  @unique
+  color String?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  products ProductTag[]
+
+  @@index([slug])
+}
+
+model ProductTag {
+  id        String @id @default(uuid())
+  productId String
+  tagId     String
+
+  createdAt DateTime @default(now())
+
+  // Relaciones
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, tagId])
+  @@index([productId])
+  @@index([tagId])
 }
