@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Role } from '@prisma/client';
 
 /**
  * Interface para los datos del perfil de Google
@@ -92,7 +93,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
               ? `${name.givenName} ${name.familyName}`
               : profile.displayName || null,
           avatar,
-          role: 'USER', // Rol por defecto
+          role: Role.USER, // Rol por defecto usando el enum
         },
       });
     } else {

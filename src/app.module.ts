@@ -12,6 +12,7 @@ import { OrdersModule } from './orders/orders.module';
 import { FavoritesModule } from './favorites/favorites.module';
 import { UploadModule } from './upload/upload.module';
 import { AdminModule } from './admin/admin.module';
+import { AddressModule } from './address/address.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AdminModule } from './admin/admin.module';
     FavoritesModule,
     UploadModule,
     AdminModule,
+    AddressModule,
   ],
   controllers: [AppController],
   providers: [AppService],
