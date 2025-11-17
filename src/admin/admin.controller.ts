@@ -10,6 +10,8 @@ import {
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrderStatus } from '@prisma/client';
@@ -17,7 +19,8 @@ import { OrderStatus } from '@prisma/client';
 @ApiTags('Admin')
 @ApiBearerAuth()
 @Controller('admin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('ADMIN', 'SUPER_ADMIN')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 
@@ -82,6 +85,7 @@ export class AdminController {
   }
 
   @Patch('users/:id/role')
+  @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Cambiar rol de un usuario' })
   async updateUserRole(
     @Param('id') id: string,
@@ -91,6 +95,7 @@ export class AdminController {
   }
 
   @Patch('users/:id/ban')
+  @Roles('SUPER_ADMIN')
   @ApiOperation({ summary: 'Banear o desbanear usuario' })
   async toggleUserBan(@Param('id') id: string) {
     return this.adminService.toggleUserBan(id);

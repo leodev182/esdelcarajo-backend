@@ -1,5 +1,4 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { User } from '@prisma/client';
 
 /**
  * Decorador para extraer el usuario autenticado del request
@@ -12,8 +11,8 @@ import { User } from '@prisma/client';
  * }
  */
 export const GetUser = createParamDecorator(
-  (data: unknown, ctx: ExecutionContext): User => {
-    const request = ctx.switchToHttp().getRequest();
+  (data: unknown, ctx: ExecutionContext) => {
+    const request = ctx.switchToHttp().getRequest<{ user: unknown }>();
     return request.user;
   },
 );
