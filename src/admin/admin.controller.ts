@@ -12,7 +12,6 @@ import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrderStatus } from '@prisma/client';
 
@@ -68,36 +67,5 @@ export class AdminController {
     @Body('status') status: OrderStatus,
   ) {
     return this.adminService.updateOrderStatus(id, status);
-  }
-
-  // ==================== GESTIÓN DE USUARIOS ====================
-
-  @Get('users')
-  @ApiOperation({ summary: 'Listar todos los usuarios' })
-  async getAllUsers() {
-    return this.adminService.getAllUsers();
-  }
-
-  @Get('users/:id')
-  @ApiOperation({ summary: 'Obtener detalle de un usuario' })
-  async getUserById(@Param('id') id: string) {
-    return this.adminService.getUserById(id);
-  }
-
-  @Patch('users/:id/role')
-  @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Cambiar rol de un usuario' })
-  async updateUserRole(
-    @Param('id') id: string,
-    @Body() updateUserRoleDto: UpdateUserRoleDto,
-  ) {
-    return this.adminService.updateUserRole(id, updateUserRoleDto);
-  }
-
-  @Patch('users/:id/ban')
-  @Roles('SUPER_ADMIN')
-  @ApiOperation({ summary: 'Banear o desbanear usuario' })
-  async toggleUserBan(@Param('id') id: string) {
-    return this.adminService.toggleUserBan(id);
   }
 }
