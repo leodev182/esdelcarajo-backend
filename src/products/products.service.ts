@@ -225,6 +225,41 @@ export class ProductsService {
   }
 
   /**
+   * Obtener un producto por slug
+   */
+  async findBySlug(slug: string) {
+    const product = await this.prisma.product.findFirst({
+      where: {
+        slug: slug,
+        isActive: true,
+      },
+      include: {
+        category: true,
+        subcategory: true,
+        variants: {
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+        },
+        images: {
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+        },
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Producto con slug "${slug}" no encontrado`);
+    }
+
+    return product;
+  }
+
+  /**
    * Actualiza un producto existente
    */
   async update(
