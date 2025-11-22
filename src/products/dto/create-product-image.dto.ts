@@ -6,6 +6,7 @@ import {
   Min,
   Max,
   IsUrl,
+  IsOptional,
 } from 'class-validator';
 
 /**
@@ -21,12 +22,29 @@ export class CreateProductImageDto {
   productId: string;
 
   /**
+   * UUID de la variante (opcional)
+   * Si se omite, la imagen es general del producto
+   * @example "550e8400-e29b-41d4-a716-446655440001"
+   */
+  @IsOptional()
+  @IsUUID('4', { message: 'variantId debe ser un UUID válido' })
+  variantId?: string | null;
+
+  /**
    * URL de la imagen (Cloudinary)
    * @example "https://res.cloudinary.com/delcarajo/image/upload/v1234567890/products/goyo-classic.jpg"
    */
   @IsUrl({}, { message: 'url debe ser una URL válida' })
   @IsNotEmpty({ message: 'url es obligatoria' })
   url: string;
+
+  /**
+   * Public ID de Cloudinary (para eliminación)
+   * @example "delcarajo/products/goyo-classic"
+   */
+  @IsString({ message: 'publicId debe ser un texto' })
+  @IsNotEmpty({ message: 'publicId es obligatorio' })
+  publicId: string;
 
   /**
    * Texto alternativo para SEO y accesibilidad

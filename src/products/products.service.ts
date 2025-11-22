@@ -461,6 +461,10 @@ export class ProductsService {
    * Agrega una imagen a un producto
    * Valida que no se excedan 5 imágenes por producto
    */
+  /**
+   * Agrega una imagen a un producto
+   * Valida que no se excedan 5 imágenes por producto
+   */
   async addImage(createImageDto: CreateProductImageDto): Promise<ProductImage> {
     const product = await this.prisma.product.findUnique({
       where: { id: createImageDto.productId },
@@ -475,6 +479,25 @@ export class ProductsService {
       throw new NotFoundException(
         `Producto con ID "${createImageDto.productId}" no encontrado`,
       );
+    }
+
+    // Validar variante si se especificó
+    if (createImageDto.variantId) {
+      const variant = await this.prisma.productVariant.findUnique({
+        where: { id: createImageDto.variantId },
+      });
+
+      if (!variant) {
+        throw new NotFoundException(
+          `Variante con ID "${createImageDto.variantId}" no encontrada`,
+        );
+      }
+
+      if (variant.productId !== createImageDto.productId) {
+        throw new BadRequestException(
+          'La variante no pertenece al producto especificado',
+        );
+      }
     }
 
     if (product.images.length >= 5) {

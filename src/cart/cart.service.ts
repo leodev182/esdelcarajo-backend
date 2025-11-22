@@ -18,6 +18,32 @@ export class CartService {
   constructor(private prisma: PrismaService) {}
 
   /**
+   * Include estándar para traer items del carrito con toda la info necesaria
+   */
+  private readonly cartInclude = {
+    items: {
+      include: {
+        variant: {
+          include: {
+            product: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                images: {
+                  where: { isActive: true },
+                  orderBy: { order: 'asc' as const },
+                  take: 1, // Solo la primera imagen
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  /**
    * Obtener o crear el carrito del usuario
    * Elimina automáticamente los items expirados
    */
@@ -25,23 +51,7 @@ export class CartService {
     // Buscar carrito del usuario
     let cart = await this.prisma.cart.findUnique({
       where: { userId },
-      include: {
-        items: {
-          include: {
-            variant: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+      include: this.cartInclude,
     });
 
     // Si existe, limpiar items expirados
@@ -61,23 +71,7 @@ export class CartService {
       // Recargar carrito con items vigentes
       cart = await this.prisma.cart.findUnique({
         where: { userId },
-        include: {
-          items: {
-            include: {
-              variant: {
-                include: {
-                  product: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        include: this.cartInclude,
       });
     }
 
@@ -85,23 +79,7 @@ export class CartService {
     if (!cart) {
       cart = await this.prisma.cart.create({
         data: { userId },
-        include: {
-          items: {
-            include: {
-              variant: {
-                include: {
-                  product: {
-                    select: {
-                      id: true,
-                      name: true,
-                      slug: true,
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        include: this.cartInclude,
       });
     }
 
