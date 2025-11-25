@@ -5,16 +5,11 @@ import { Readable } from 'stream';
 
 @Injectable()
 export class UploadService {
-  /**
-   * Subir una imagen a Cloudinary
-   */
   async uploadImage(file: Express.Multer.File): Promise<UploadResponseDto> {
-    // Validar que el archivo exista
     if (!file) {
       throw new BadRequestException('No se proporcionó ningún archivo');
     }
 
-    // Validar tipo de archivo
     const allowedMimeTypes = [
       'image/jpeg',
       'image/jpg',
@@ -27,8 +22,7 @@ export class UploadService {
       );
     }
 
-    // Validar tamaño (máximo 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB en bytes
+    const maxSize = 5 * 1024 * 1024;
     if (file.size > maxSize) {
       throw new BadRequestException(
         'La imagen es demasiado grande. Tamaño máximo: 5MB',
@@ -36,7 +30,6 @@ export class UploadService {
     }
 
     try {
-      // Subir a Cloudinary usando stream
       const uploadResult = await new Promise((resolve, reject) => {
         const uploadStream = cloudinary.uploader.upload_stream(
           {
@@ -57,14 +50,12 @@ export class UploadService {
           },
         );
 
-        // Convertir buffer a stream y hacer pipe
         const bufferStream = new Readable();
         bufferStream.push(file.buffer);
         bufferStream.push(null);
         bufferStream.pipe(uploadStream);
       });
 
-      // Verificar que uploadResult tenga las propiedades necesarias
       if (!uploadResult || typeof uploadResult !== 'object') {
         throw new BadRequestException(
           'Error al procesar la respuesta de Cloudinary',
@@ -80,7 +71,6 @@ export class UploadService {
         bytes: number;
       };
 
-      // Retornar información de la imagen subida
       return {
         url: result.secure_url,
         publicId: result.public_id,
@@ -98,9 +88,6 @@ export class UploadService {
     }
   }
 
-  /**
-   * Eliminar una imagen de Cloudinary
-   */
   async deleteImage(publicId: string): Promise<{ message: string }> {
     if (!publicId) {
       throw new BadRequestException('Se requiere el publicId de la imagen');
@@ -109,7 +96,6 @@ export class UploadService {
     try {
       const result: unknown = await cloudinary.uploader.destroy(publicId);
 
-      // Verificar el resultado
       if (!result || typeof result !== 'object') {
         throw new BadRequestException(
           'Error al procesar la respuesta de Cloudinary',
@@ -134,9 +120,6 @@ export class UploadService {
     }
   }
 
-  /**
-   * Subir múltiples imágenes
-   */
   async uploadMultipleImages(
     files: Express.Multer.File[],
   ): Promise<UploadResponseDto[]> {
@@ -144,17 +127,95 @@ export class UploadService {
       throw new BadRequestException('No se proporcionaron archivos');
     }
 
-    // Validar que no se suban más de 5 imágenes
     if (files.length > 5) {
       throw new BadRequestException(
         'Máximo 5 imágenes por producto permitidas',
       );
     }
 
-    // Subir todas las imágenes en paralelo
     const uploadPromises = files.map((file) => this.uploadImage(file));
     const results = await Promise.all(uploadPromises);
 
     return results;
+  }
+
+  async uploadPaymentProof(
+    file: Express.Multer.File,
+  ): Promise<UploadResponseDto> {
+    if (!file) {
+      throw new BadRequestException('No se proporcionó ningún archivo');
+    }
+
+    const allowedMimeTypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+    ];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Formato de imagen no válido. Solo se permiten: JPG, PNG, WEBP',
+      );
+    }
+
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      throw new BadRequestException(
+        'La imagen es demasiado grande. Tamaño máximo: 5MB',
+      );
+    }
+
+    try {
+      const uploadResult = await new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            folder: 'delcarajo/payment-proofs',
+            resource_type: 'image',
+          },
+          (error, result) => {
+            if (error) {
+              reject(new Error(error.message || 'Error al subir comprobante'));
+            } else {
+              resolve(result);
+            }
+          },
+        );
+
+        const bufferStream = new Readable();
+        bufferStream.push(file.buffer);
+        bufferStream.push(null);
+        bufferStream.pipe(uploadStream);
+      });
+
+      if (!uploadResult || typeof uploadResult !== 'object') {
+        throw new BadRequestException(
+          'Error al procesar la respuesta de Cloudinary',
+        );
+      }
+
+      const result = uploadResult as {
+        secure_url: string;
+        public_id: string;
+        format: string;
+        width: number;
+        height: number;
+        bytes: number;
+      };
+
+      return {
+        url: result.secure_url,
+        publicId: result.public_id,
+        format: result.format,
+        width: result.width,
+        height: result.height,
+        size: result.bytes,
+      };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Error desconocido';
+      throw new BadRequestException(
+        `Error al subir el comprobante a Cloudinary: ${errorMessage}`,
+      );
+    }
   }
 }

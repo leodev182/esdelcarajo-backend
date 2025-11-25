@@ -381,4 +381,51 @@ export class OrdersService {
       },
     };
   }
+
+  async updatePaymentProof(
+    orderId: string,
+    userId: string,
+    paymentProofUrl: string,
+  ) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Orden no encontrada');
+    }
+
+    if (order.userId !== userId) {
+      throw new ForbiddenException(
+        'No tienes permiso para actualizar esta orden',
+      );
+    }
+
+    if (order.status !== OrderStatus.PENDING_PAYMENT) {
+      throw new BadRequestException(
+        'Solo puedes subir comprobante si el pago está pendiente',
+      );
+    }
+
+    return this.prisma.order.update({
+      where: { id: orderId },
+      data: { paymentProof: paymentProofUrl },
+      include: {
+        items: {
+          include: {
+            variant: true,
+          },
+        },
+        address: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            phone: true,
+          },
+        },
+      },
+    });
+  }
 }

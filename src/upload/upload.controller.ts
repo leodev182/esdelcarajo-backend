@@ -24,12 +24,12 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @ApiTags('Upload')
 @ApiBearerAuth()
 @Controller('upload')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('ADMIN', 'SUPER_ADMIN')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
   @Post('image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
   @ApiOperation({ summary: 'Subir una imagen a Cloudinary' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file'))
@@ -41,6 +41,8 @@ export class UploadController {
   }
 
   @Post('images')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
   @ApiOperation({ summary: 'Subir múltiples imágenes (máximo 5)' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FilesInterceptor('files', 5))
@@ -52,11 +54,25 @@ export class UploadController {
   }
 
   @Delete('image')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
   @ApiOperation({ summary: 'Eliminar una imagen de Cloudinary' })
   async deleteImage(@Body('publicId') publicId: string) {
     if (!publicId) {
       throw new BadRequestException('Se requiere el publicId de la imagen');
     }
     return this.uploadService.deleteImage(publicId);
+  }
+
+  @Post('payment-proof')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Subir comprobante de pago' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPaymentProof(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No se proporcionó ningún archivo');
+    }
+    return this.uploadService.uploadPaymentProof(file);
   }
 }
