@@ -94,6 +94,35 @@ export class CategoriesService {
   }
 
   /**
+   * Find a category by slug
+   */
+
+  async findBySlug(slug: string) {
+    const category = await this.prisma.category.findFirst({
+      where: {
+        slug,
+        isActive: true,
+      },
+      include: {
+        subcategories: {
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+        },
+        products: {
+          where: { isActive: true },
+          take: 10,
+        },
+      },
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category with slug "${slug}" not found`);
+    }
+
+    return category;
+  }
+
+  /**
    * Update a category
    */
   async update(
