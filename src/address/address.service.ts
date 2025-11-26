@@ -18,7 +18,14 @@ export class AddressService {
    * Si se marca como predeterminada, desmarca las demás
    */
   async create(userId: string, dto: CreateAddressDto) {
-    // Si la nueva dirección es predeterminada, desmarcar todas las demás
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
     if (dto.isDefault) {
       await this.prisma.address.updateMany({
         where: {
@@ -31,7 +38,13 @@ export class AddressService {
       });
     }
 
-    // Crear la nueva dirección
+    if (!user.phone) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { phone: dto.phone },
+      });
+    }
+
     return this.prisma.address.create({
       data: {
         userId,
