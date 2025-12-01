@@ -13,6 +13,7 @@ import { FavoritesModule } from './favorites/favorites.module';
 import { UploadModule } from './upload/upload.module';
 import { AdminModule } from './admin/admin.module';
 import { AddressModule } from './address/address.module';
+import { BcvModule } from './bcv/bcv.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AddressModule } from './address/address.module';
     UploadModule,
     AdminModule,
     AddressModule,
+    BcvModule,
   ],
   controllers: [AppController],
   providers: [AppService],
