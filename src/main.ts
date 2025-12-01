@@ -36,5 +36,6 @@ async function bootstrap() {
 
   console.log(`🚀 Backend corriendo en http://localhost:${port}`);
   console.log(`📚 API disponible en http://localhost:${port}/api`);
+  console.log(`🛡️  Rate limiting: 100 requests/minuto por IP`);
 }
 bootstrap();
