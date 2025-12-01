@@ -22,6 +22,7 @@
     "@nestjs/mapped-types": "^2.1.0",
     "@nestjs/passport": "^11.0.5",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/schedule": "^6.0.1",
     "@nestjs/swagger": "^11.2.1",
     "@prisma/client": "^6.19.0",
     "@sentry/node": "^10.23.0",

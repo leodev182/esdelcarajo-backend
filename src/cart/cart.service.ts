@@ -279,4 +279,24 @@ export class CartService {
 
     return this.getCartWithTotals(userId);
   }
+
+  /**
+   * Limpiar items expirados de TODOS los carritos (usado por CRON)
+   */
+  async cleanupExpiredItems() {
+    const now = new Date();
+
+    const result = await this.prisma.cartItem.deleteMany({
+      where: {
+        expiresAt: {
+          lt: now,
+        },
+      },
+    });
+
+    return {
+      deletedCount: result.count,
+      timestamp: now,
+    };
+  }
 }
