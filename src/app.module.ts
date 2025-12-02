@@ -16,6 +16,7 @@ import { UploadModule } from './upload/upload.module';
 import { AdminModule } from './admin/admin.module';
 import { AddressModule } from './address/address.module';
 import { BcvModule } from './bcv/bcv.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { BcvModule } from './bcv/bcv.module';
     AdminModule,
     AddressModule,
     BcvModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

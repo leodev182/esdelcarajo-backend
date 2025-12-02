@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MailService } from '../../mail/mail.service';
 import { Role } from '@prisma/client';
 
 /**
@@ -36,7 +37,10 @@ interface GoogleProfile extends Profile {
  */
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    private mailService: MailService,
+  ) {
     super({
       // Client ID de Google Cloud Console
       clientID: process.env.GOOGLE_CLIENT_ID,
@@ -93,9 +97,15 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
               ? `${name.givenName} ${name.familyName}`
               : profile.displayName || null,
           avatar,
-          role: Role.USER, // Rol por defecto usando el enum
+          role: Role.USER,
         },
       });
+
+      // Enviar email de bienvenida (solo para nuevos usuarios)
+      await this.mailService.sendWelcomeEmail(
+        user.email,
+        user.name || 'Cliente',
+      );
     } else {
       // Si existe, actualizar su info (por si cambió nombre o foto en Google)
       user = await this.prisma.user.update({

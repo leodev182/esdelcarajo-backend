@@ -8,18 +8,15 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 import { RolesGuard } from './guards/roles.guard';
 import { PrismaModule } from '../prisma/prisma.module';
+import { MailModule } from '../mail/mail.module';
 
-/**
- * Módulo de autenticación
- */
 @Module({
   imports: [
     PrismaModule,
-
+    MailModule,
     PassportModule.register({
       defaultStrategy: 'jwt',
     }),
-
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -31,11 +28,8 @@ import { PrismaModule } from '../prisma/prisma.module';
       }),
     }),
   ],
-
   controllers: [AuthController],
-
   providers: [AuthService, JwtStrategy, GoogleStrategy, RolesGuard],
-
   exports: [AuthService, JwtStrategy, PassportModule, RolesGuard],
 })
 export class AuthModule {}
