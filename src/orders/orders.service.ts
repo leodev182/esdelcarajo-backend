@@ -5,32 +5,20 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrderStatus, Role } from '@prisma/client';
 
-/**
- * Servicio para gestionar órdenes de compra
- * - Crea órdenes desde el carrito
- * - Guarda snapshots de productos (precio al momento de compra)
- * - Maneja estados de pedido con timestamps
- * - Vacía el carrito después de crear orden
- */
 @Injectable()
 export class OrdersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailService: MailService,
+  ) {}
 
-  /**
-   * Crear una nueva orden desde el carrito del usuario
-   * - Valida que el carrito tenga items
-   * - Valida que la dirección pertenezca al usuario
-   * - Crea snapshots de productos (precio, nombre al momento de compra)
-   * - Calcula totales
-   * - Vacía el carrito
-   */
   async createOrder(userId: string, dto: CreateOrderDto) {
-    // 1. Obtener carrito del usuario con items
     const cart = await this.prisma.cart.findUnique({
       where: { userId },
       include: {
@@ -50,7 +38,6 @@ export class OrdersService {
       throw new BadRequestException('El carrito está vacío');
     }
 
-    // 2. Validar que la dirección pertenece al usuario
     const address = await this.prisma.address.findFirst({
       where: {
         id: dto.addressId,
@@ -65,18 +52,15 @@ export class OrdersService {
       );
     }
 
-    // 3. Calcular totales y validar stock
     let subtotal = 0;
 
     for (const item of cart.items) {
-      // Validar que el producto y variante sigan activos
       if (!item.variant.isActive || !item.variant.product.isActive) {
         throw new BadRequestException(
           `El producto ${item.variant.product.name} ya no está disponible`,
         );
       }
 
-      // Validar stock disponible
       if (item.variant.stock < item.quantity) {
         throw new BadRequestException(
           `Stock insuficiente para ${item.variant.product.name}. Disponible: ${item.variant.stock}`,
@@ -87,9 +71,8 @@ export class OrdersService {
       subtotal += itemSubtotal;
     }
 
-    const total = subtotal; // Sin envío, se acuerda por WhatsApp
+    const total = subtotal;
 
-    // 4. Crear la orden con snapshots de productos
     const order = await this.prisma.order.create({
       data: {
         userId,
@@ -99,7 +82,6 @@ export class OrdersService {
         status: OrderStatus.PENDING_PAYMENT,
         paymentMethod: dto.paymentMethod,
         customerNotes: dto.customerNotes,
-        // Crear OrderItems con snapshots
         items: {
           create: cart.items.map((item) => ({
             variantId: item.variantId,
@@ -131,7 +113,6 @@ export class OrdersService {
       },
     });
 
-    // 5. Reducir stock de las variantes
     for (const item of cart.items) {
       await this.prisma.productVariant.update({
         where: { id: item.variantId },
@@ -142,7 +123,6 @@ export class OrdersService {
         },
       });
 
-      // Si el stock llega a 0, desactivar la variante
       const updatedVariant = await this.prisma.productVariant.findUnique({
         where: { id: item.variantId },
       });
@@ -155,18 +135,20 @@ export class OrdersService {
       }
     }
 
-    // 6. Vaciar el carrito (hard delete de items)
     await this.prisma.cartItem.deleteMany({
       where: { cartId: cart.id },
     });
 
+    await this.mailService.sendOrderCreatedEmail(
+      order.user.email,
+      order.user.name || 'Cliente',
+      order.id,
+      Number(order.total),
+    );
+
     return order;
   }
 
-  /**
-   * Obtener órdenes del usuario autenticado
-   * Con filtros y paginación
-   */
   async getUserOrders(userId: string, query: QueryOrdersDto) {
     const { status, page = 1, limit = 10 } = query;
 
@@ -208,10 +190,6 @@ export class OrdersService {
     };
   }
 
-  /**
-   * Obtener una orden específica
-   * Solo el dueño o ADMIN puede verla
-   */
   async getOrderById(orderId: string, userId: string, userRole: Role) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
@@ -241,7 +219,6 @@ export class OrdersService {
       throw new NotFoundException('Orden no encontrada');
     }
 
-    // Validar permisos: solo el dueño o admin pueden ver
     if (order.userId !== userId && userRole === Role.USER) {
       throw new ForbiddenException('No tienes permiso para ver esta orden');
     }
@@ -249,16 +226,11 @@ export class OrdersService {
     return order;
   }
 
-  /**
-   * Actualizar estado de una orden (solo ADMIN/SUPER_ADMIN)
-   * Actualiza timestamps según el nuevo estado
-   */
   async updateOrderStatus(
     orderId: string,
     dto: UpdateOrderStatusDto,
     userRole: Role,
   ) {
-    // Validar permisos
     if (userRole === Role.USER) {
       throw new ForbiddenException('No tienes permiso para actualizar órdenes');
     }
@@ -271,7 +243,6 @@ export class OrdersService {
       throw new NotFoundException('Orden no encontrada');
     }
 
-    // Preparar datos de actualización
     const updateData: {
       status: OrderStatus;
       adminNotes?: string;
@@ -284,7 +255,6 @@ export class OrdersService {
       adminNotes: dto.adminNotes,
     };
 
-    // Actualizar timestamps según el estado
     const now = new Date();
 
     switch (dto.status) {
@@ -302,7 +272,7 @@ export class OrdersService {
         break;
     }
 
-    return this.prisma.order.update({
+    const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: updateData,
       include: {
@@ -322,12 +292,23 @@ export class OrdersService {
         },
       },
     });
+
+    if (
+      dto.status === OrderStatus.PAGO_CONFIRMADO ||
+      dto.status === OrderStatus.EN_CAMINO ||
+      dto.status === OrderStatus.ENTREGADO
+    ) {
+      await this.mailService.sendOrderStatusEmail(
+        updatedOrder.user.email,
+        updatedOrder.user.name || 'Cliente',
+        updatedOrder.id,
+        dto.status,
+      );
+    }
+
+    return updatedOrder;
   }
 
-  /**
-   * Obtener todas las órdenes (solo ADMIN)
-   * Con filtros y paginación
-   */
   async getAllOrders(query: QueryOrdersDto, userRole: Role) {
     if (userRole === Role.USER) {
       throw new ForbiddenException(
