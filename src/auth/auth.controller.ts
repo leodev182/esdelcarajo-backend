@@ -1,83 +1,116 @@
-import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Req,
+  Res,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Request, Response } from 'express';
 import { User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
-/**
- * Interface para extender Request con usuario autenticado
- */
 interface RequestWithUser extends Request {
   user: User;
 }
 
-/**
- * Controller de autenticación
- *
- * Rutas:
- * - GET /auth/google → Iniciar login con Google
- * - GET /auth/google/callback → Callback de Google OAuth
- * - GET /auth/profile → Obtener perfil del usuario autenticado
- */
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  /**
-   * Ruta 1: Iniciar login con Google
-   *
-   * Cuando el usuario accede a esta ruta, GoogleAuthGuard
-   * automáticamente redirige a Google para autorizar.
-   *
-   * GET /auth/google
-   */
   @Get('google')
   @UseGuards(GoogleAuthGuard)
-  googleAuth() {
-    // Este método nunca se ejecuta
-    // El guard intercepta y redirige a Google
-  }
+  googleAuth() {}
 
   /**
-   * Ruta 2: Callback de Google OAuth
-   *
-   * Google redirige aquí después de que el usuario autoriza.
-   * GoogleStrategy valida el code y crea/actualiza el usuario.
-   * AuthService genera el JWT.
-   * Finalmente redirige al frontend con el token.
-   *
-   * GET /auth/google/callback?code=xxx
+   * Callback de Google OAuth
+   * Genera tokens y guarda refresh_token en HttpOnly Cookie
    */
   @Get('google/callback')
   @UseGuards(GoogleAuthGuard)
-  googleAuthCallback(@Req() req: RequestWithUser, @Res() res: Response) {
-    // req.user contiene el usuario de GoogleStrategy
+  async googleAuthCallback(@Req() req: RequestWithUser, @Res() res: Response) {
     const user = req.user;
+    const loginResponse = await this.authService.login(user);
 
-    // Generar JWT para el usuario
-    const loginResponse = this.authService.login(user);
+    // Guardar refresh_token en HttpOnly Cookie (seguro, no accesible por JavaScript)
+    res.cookie('refresh_token', loginResponse.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+      path: '/api/auth',
+    });
 
-    // Redirigir al frontend con el token en la URL
+    // Redirigir al frontend solo con el access_token
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const redirectUrl = `${frontendUrl}/auth/callback?token=${loginResponse.access_token}`;
 
     return res.redirect(redirectUrl);
   }
 
-  /**
-   * Ruta 3: Obtener perfil del usuario autenticado
-   *
-   * Esta ruta está protegida con JwtAuthGuard.
-   * Solo usuarios con JWT válido pueden acceder.
-   *
-   * GET /auth/profile
-   * Headers: { Authorization: "Bearer <token>" }
-   */
   @Get('profile')
   @UseGuards(JwtAuthGuard)
   getProfile(@Req() req: RequestWithUser) {
-    // req.user contiene el usuario de JwtStrategy
     return req.user;
+  }
+
+  /**
+   * Renovar access token usando refresh token desde cookie
+   */
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  async refresh(@Req() req: Request) {
+    const refreshToken = req.cookies?.refresh_token;
+
+    if (!refreshToken) {
+      throw new UnauthorizedException('Refresh token no encontrado');
+    }
+
+    const loginResponse =
+      await this.authService.refreshAccessToken(refreshToken);
+
+    // Actualizar cookie con el nuevo refresh_token
+    const res = req.res as Response;
+    res.cookie('refresh_token', loginResponse.refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth',
+    });
+
+    return loginResponse;
+  }
+
+  /**
+   * Cerrar sesión (eliminar cookie de refresh_token)
+   */
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async logout(@Req() req: Request, @Res() res: Response) {
+    const refreshToken = req.cookies?.refresh_token;
+
+    if (refreshToken) {
+      await this.authService.revokeRefreshToken(refreshToken);
+    }
+
+    // Eliminar cookie
+    res.clearCookie('refresh_token', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/auth',
+    });
+
+    return res.json({
+      message: 'Sesión cerrada exitosamente',
+    });
   }
 }

@@ -5,6 +5,12 @@ export class LoginResponseDto {
   access_token: string;
 
   /**
+   * Refresh token para obtener nuevos access tokens
+   */
+
+  refresh_token?: string;
+
+  /**
    * Tipo de token (siempre "Bearer")
    */
   token_type: string;

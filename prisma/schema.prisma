@@ -66,10 +66,27 @@ model User {
   cart      Cart?
   orders    Order[]
   favorites Favorite[]
+  refreshTokens RefreshToken[]
 
   @@index([email])
   @@index([googleId])
   @@index([nickname])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relaciones
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+  @@index([expiresAt])
 }
 
 model Address {

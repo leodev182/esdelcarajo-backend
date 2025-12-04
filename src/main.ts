@@ -7,10 +7,12 @@ import helmet from 'helmet';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // CORS
+  // CORS con credentials habilitado para cookies
   app.enableCors({
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // Seguridad
@@ -33,9 +35,5 @@ async function bootstrap() {
 
   const port = process.env.PORT || 3001;
   await app.listen(port);
-
-  console.log(`🚀 Backend corriendo en http://localhost:${port}`);
-  console.log(`📚 API disponible en http://localhost:${port}/api`);
-  console.log(`🛡️  Rate limiting: 100 requests/minuto por IP`);
 }
 bootstrap();
