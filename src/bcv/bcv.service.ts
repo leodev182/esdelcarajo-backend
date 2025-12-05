@@ -49,8 +49,9 @@ export class BcvService {
       const response = await fetch('https://www.bcv.org.ve/');
       const html = await response.text();
 
+      // Buscar EURO
       const rateMatch = html.match(
-        /(?:USD|Dólar)[\s\S]*?(\d{1,3}(?:[.,]\d{2,3})?)/i,
+        /(?:EUR|Euro)[\s\S]*?(\d{1,3}(?:[.,]\d{2,3})?)/i,
       );
 
       if (rateMatch && rateMatch[1]) {
@@ -58,12 +59,12 @@ export class BcvService {
         const rate = parseFloat(rateString);
 
         if (!isNaN(rate) && rate > 0) {
-          this.logger.log(`Tasa obtenida: ${rate} Bs`);
+          this.logger.log(`Tasa EUR obtenida: ${rate} Bs`);
           return rate;
         }
       }
 
-      throw new Error('No se pudo extraer la tasa del HTML');
+      throw new Error('No se pudo extraer la tasa EUR del HTML');
     } catch (error) {
       this.logger.error('Error scrapeando BCV:', error);
       throw error;
