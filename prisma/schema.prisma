@@ -144,7 +144,7 @@ model Subcategory {
   id          String  @id @default(uuid())
   categoryId  String
   name        String
-  slug        String  @unique
+  slug        String  
   description String? @db.Text
   icon        String?
   order       Int     @default(0)
@@ -158,6 +158,7 @@ model Subcategory {
   products Product[]
 
   @@unique([categoryId, name])
+  @@unique([categoryId, slug])
   @@index([categoryId])
   @@index([slug])
   @@index([isActive])

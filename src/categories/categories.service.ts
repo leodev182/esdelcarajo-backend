@@ -15,9 +15,6 @@ import { Category, Subcategory } from '@prisma/client';
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Generate URL-friendly slug from name
-   */
   private generateSlug(name: string): string {
     return name
       .toLowerCase()
@@ -27,9 +24,11 @@ export class CategoriesService {
       .replace(/(^-|-$)/g, '');
   }
 
-  /**
-   * Create a new category
-   */
+  private generateSubcategorySlug(categorySlug: string, name: string): string {
+    const baseSlug = this.generateSlug(name);
+    return `${categorySlug}-${baseSlug}`;
+  }
+
   async create(createCategoryDto: CreateCategoryDto): Promise<Category> {
     const slug: string = this.generateSlug(createCategoryDto.name);
 
@@ -52,9 +51,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Get all active categories with their subcategories
-   */
   async findAll() {
     return this.prisma.category.findMany({
       where: { isActive: true },
@@ -68,9 +64,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Get a single category by ID
-   */
   async findOne(id: string) {
     const category = await this.prisma.category.findUnique({
       where: { id },
@@ -92,10 +85,6 @@ export class CategoriesService {
 
     return category;
   }
-
-  /**
-   * Find a category by slug
-   */
 
   async findBySlug(slug: string) {
     const category = await this.prisma.category.findFirst({
@@ -122,9 +111,6 @@ export class CategoriesService {
     return category;
   }
 
-  /**
-   * Update a category
-   */
   async update(
     id: string,
     updateCategoryDto: UpdateCategoryDto,
@@ -159,9 +145,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Soft delete a category
-   */
   async remove(id: string): Promise<Category> {
     await this.findOne(id);
 
@@ -186,9 +169,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Create a new subcategory
-   */
   async createSubcategory(
     createSubcategoryDto: CreateSubcategoryDto,
   ): Promise<Subcategory> {
@@ -202,19 +182,22 @@ export class CategoriesService {
       );
     }
 
-    const slug: string = this.generateSlug(createSubcategoryDto.name);
+    const slug: string = this.generateSubcategorySlug(
+      category.slug,
+      createSubcategoryDto.name,
+    );
 
     const existingSubcategory: Subcategory | null =
       await this.prisma.subcategory.findFirst({
         where: {
-          slug,
+          name: createSubcategoryDto.name,
           categoryId: createSubcategoryDto.categoryId,
         },
       });
 
     if (existingSubcategory) {
       throw new ConflictException(
-        `Subcategory with slug "${slug}" already exists in this category`,
+        `Subcategory "${createSubcategoryDto.name}" already exists in this category`,
       );
     }
 
@@ -226,9 +209,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Get all subcategories for a category
-   */
   async findAllSubcategories(categoryId: string): Promise<Subcategory[]> {
     const category: Category | null = await this.prisma.category.findUnique({
       where: { id: categoryId },
@@ -247,9 +227,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Get a single subcategory by ID
-   */
   async findOneSubcategory(id: string) {
     const subcategory = await this.prisma.subcategory.findUnique({
       where: { id },
@@ -269,31 +246,39 @@ export class CategoriesService {
     return subcategory;
   }
 
-  /**
-   * Update a subcategory
-   */
   async updateSubcategory(
     id: string,
     updateSubcategoryDto: UpdateSubcategoryDto,
   ): Promise<Subcategory> {
-    await this.findOneSubcategory(id);
+    const subcategory = await this.findOneSubcategory(id);
 
     let slug: string | undefined;
     if (updateSubcategoryDto.name) {
-      slug = this.generateSlug(updateSubcategoryDto.name);
+      const category = await this.prisma.category.findUnique({
+        where: { id: subcategory.categoryId },
+      });
+
+      if (!category) {
+        throw new NotFoundException('Category not found');
+      }
+
+      slug = this.generateSubcategorySlug(
+        category.slug,
+        updateSubcategoryDto.name,
+      );
 
       const existingSubcategory: Subcategory | null =
         await this.prisma.subcategory.findFirst({
           where: {
-            slug,
-            categoryId: updateSubcategoryDto.categoryId,
+            name: updateSubcategoryDto.name,
+            categoryId: subcategory.categoryId,
             NOT: { id },
           },
         });
 
       if (existingSubcategory) {
         throw new ConflictException(
-          `Subcategory with slug "${slug}" already exists in this category`,
+          `Subcategory "${updateSubcategoryDto.name}" already exists in this category`,
         );
       }
     }
@@ -307,9 +292,6 @@ export class CategoriesService {
     });
   }
 
-  /**
-   * Soft delete a subcategory
-   */
   async removeSubcategory(id: string): Promise<Subcategory> {
     await this.findOneSubcategory(id);
 
