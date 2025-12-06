@@ -397,3 +397,25 @@ model ProductTag {
   @@index([productId])
   @@index([tagId])
 }
+
+enum Currency {
+  EUR
+  USD
+  VES
+}
+
+model ExchangeRate {
+  id        String   @id @default(uuid())
+  
+  fromCurrency Currency
+  toCurrency   Currency
+  rate         Decimal  @db.Decimal(15, 8)
+  valueDate    DateTime
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([fromCurrency, toCurrency, valueDate])
+  @@index([valueDate])
+  @@index([fromCurrency, toCurrency])
+}
