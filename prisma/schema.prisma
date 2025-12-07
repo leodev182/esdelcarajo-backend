@@ -420,3 +420,49 @@ model ExchangeRate {
   @@index([valueDate])
   @@index([fromCurrency, toCurrency])
 }
+
+enum SectionType {
+  CAROUSEL
+  CUSTOM
+}
+
+enum TextPosition {
+  LEFT
+  CENTER
+  RIGHT
+  TOP
+  BOTTOM
+}
+
+model LandingSection {
+  id           String       @id @default(uuid())
+  type         SectionType
+  title        String
+  description  String?      @db.Text
+  textPosition TextPosition @default(CENTER)
+  bgColor      String       @default("#FFFFFF")
+  order        Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  images SectionImage[]
+
+  @@index([type])
+  @@index([isActive])
+  @@index([order])
+}
+
+model SectionImage {
+  id        String  @id @default(uuid())
+  sectionId String
+  url       String
+  publicId  String
+  alt       String  @default("")
+  order     Int     @default(0)
+
+  section LandingSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  @@index([sectionId])
+  @@index([order])
+}

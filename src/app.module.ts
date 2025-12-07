@@ -18,6 +18,7 @@ import { AdminModule } from './admin/admin.module';
 import { AddressModule } from './address/address.module';
 import { BcvModule } from './bcv/bcv.module';
 import { MailModule } from './mail/mail.module';
+import { LandingModule } from './landing/landing.module';
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { MailModule } from './mail/mail.module';
     AddressModule,
     BcvModule,
     MailModule,
+    LandingModule,
   ],
   controllers: [AppController],
   providers: [AppService],
