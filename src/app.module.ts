@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -58,6 +59,7 @@ import { LandingModule } from './landing/landing.module';
         },
       },
     }),
+    SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
