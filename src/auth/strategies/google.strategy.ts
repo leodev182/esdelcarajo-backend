@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
 import { Role } from '@prisma/client';
@@ -37,23 +38,31 @@ interface GoogleProfile extends Profile {
  */
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
+  private readonly logger = new Logger(GoogleStrategy.name);
+  private readonly superAdminEmails: string[];
+
   constructor(
+    private configService: ConfigService,
     private prisma: PrismaService,
     private mailService: MailService,
   ) {
     super({
-      // Client ID de Google Cloud Console
       clientID: process.env.GOOGLE_CLIENT_ID,
-
-      // Client Secret de Google Cloud Console
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-
-      // URL a donde Google redirige después de autorizar
       callbackURL: process.env.GOOGLE_CALLBACK_URL,
-
-      // Scopes: qué permisos pedimos a Google
       scope: ['email', 'profile'],
     });
+
+    const emailsString =
+      this.configService.get<string>('SUPER_ADMIN_EMAILS') || '';
+    this.superAdminEmails = emailsString
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter((email) => email.length > 0);
+
+    this.logger.log(
+      `Super admins configurados: ${this.superAdminEmails.length}`,
+    );
   }
 
   /**
@@ -70,57 +79,77 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     profile: GoogleProfile,
     done: VerifyCallback,
   ): Promise<any> {
-    // Extraer datos del perfil de Google
     const { id, name, emails, photos } = profile;
 
-    // Verificar que tenga email
     if (!emails || emails.length === 0) {
+      this.logger.error('Usuario sin email en Google OAuth');
       return done(new Error('No se pudo obtener el email de Google'), null);
     }
 
     const email = emails[0].value;
     const avatar = photos && photos.length > 0 ? photos[0].value : null;
 
-    // Buscar si el usuario ya existe en nuestra DB
-    let user = await this.prisma.user.findUnique({
-      where: { googleId: id },
-    });
+    const isSuperAdmin = this.superAdminEmails.includes(email.toLowerCase());
+    const role: Role = isSuperAdmin ? Role.SUPER_ADMIN : Role.USER;
 
-    // Si no existe, crearlo
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email,
-          googleId: id,
-          name:
-            name?.givenName && name?.familyName
-              ? `${name.givenName} ${name.familyName}`
-              : profile.displayName || null,
-          avatar,
-          role: Role.USER,
-        },
+    try {
+      let user = await this.prisma.user.findUnique({
+        where: { googleId: id },
       });
 
-      // Enviar email de bienvenida (solo para nuevos usuarios)
-      await this.mailService.sendWelcomeEmail(
-        user.email,
-        user.name || 'Cliente',
-      );
-    } else {
-      // Si existe, actualizar su info (por si cambió nombre o foto en Google)
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
+      if (!user) {
+        user = await this.prisma.user.create({
+          data: {
+            email,
+            googleId: id,
+            name:
+              name?.givenName && name?.familyName
+                ? `${name.givenName} ${name.familyName}`
+                : profile.displayName || null,
+            avatar,
+            role,
+          },
+        });
+
+        if (isSuperAdmin) {
+          this.logger.log(`🔥 Nuevo SUPER_ADMIN creado: ${email}`);
+        } else {
+          this.logger.log(`Nuevo usuario creado: ${email}`);
+        }
+
+        await this.mailService.sendWelcomeEmail(
+          user.email,
+          user.name || 'Cliente',
+        );
+      } else {
+        const updateData: {
+          name?: string;
+          avatar?: string;
+          role?: Role;
+        } = {
           name:
             name?.givenName && name?.familyName
               ? `${name.givenName} ${name.familyName}`
               : profile.displayName || user.name,
           avatar: avatar || user.avatar,
-        },
-      });
-    }
+        };
 
-    // Retornar el usuario (Passport lo adjunta a req.user)
-    done(null, user);
+        if (isSuperAdmin && user.role !== Role.SUPER_ADMIN) {
+          updateData.role = Role.SUPER_ADMIN;
+          this.logger.log(`🔥 Usuario promovido a SUPER_ADMIN: ${email}`);
+        }
+
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: updateData,
+        });
+      }
+
+      done(null, user);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error en Google OAuth para ${email}`, err.stack);
+      done(error, null);
+    }
   }
 }

@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
@@ -13,6 +14,8 @@ import { Category, Subcategory } from '@prisma/client';
 
 @Injectable()
 export class CategoriesService {
+  private readonly logger = new Logger(CategoriesService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private generateSlug(name: string): string {
@@ -30,25 +33,44 @@ export class CategoriesService {
   }
 
   async create(createCategoryDto: CreateCategoryDto): Promise<Category> {
-    const slug: string = this.generateSlug(createCategoryDto.name);
+    this.logger.log(`Creando categoría: ${createCategoryDto.name}`);
 
-    const existingCategory: Category | null =
-      await this.prisma.category.findUnique({
-        where: { slug },
+    try {
+      const slug: string = this.generateSlug(createCategoryDto.name);
+
+      const existingCategory: Category | null =
+        await this.prisma.category.findUnique({
+          where: { slug },
+        });
+
+      if (existingCategory) {
+        this.logger.warn(`Categoría con slug "${slug}" ya existe`);
+        throw new ConflictException(
+          `Category with slug "${slug}" already exists`,
+        );
+      }
+
+      const category = await this.prisma.category.create({
+        data: {
+          ...createCategoryDto,
+          slug,
+        },
       });
 
-    if (existingCategory) {
-      throw new ConflictException(
-        `Category with slug "${slug}" already exists`,
+      this.logger.log(
+        `Categoría creada exitosamente - ID: ${category.id}, Slug: ${slug}`,
       );
-    }
 
-    return this.prisma.category.create({
-      data: {
-        ...createCategoryDto,
-        slug,
-      },
-    });
+      return category;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error creando categoría: ${createCategoryDto.name}`,
+        err.stack,
+        { categoryName: createCategoryDto.name },
+      );
+      throw error;
+    }
   }
 
   async findAll() {
@@ -80,6 +102,7 @@ export class CategoriesService {
     });
 
     if (!category) {
+      this.logger.warn(`Categoría ${id} no encontrada`);
       throw new NotFoundException(`Category with ID "${id}" not found`);
     }
 
@@ -105,6 +128,7 @@ export class CategoriesService {
     });
 
     if (!category) {
+      this.logger.warn(`Categoría con slug "${slug}" no encontrada`);
       throw new NotFoundException(`Category with slug "${slug}" not found`);
     }
 
@@ -115,98 +139,156 @@ export class CategoriesService {
     id: string,
     updateCategoryDto: UpdateCategoryDto,
   ): Promise<Category> {
-    await this.findOne(id);
+    this.logger.log(`Actualizando categoría ${id}`);
 
-    let slug: string | undefined;
-    if (updateCategoryDto.name) {
-      slug = this.generateSlug(updateCategoryDto.name);
+    try {
+      await this.findOne(id);
 
-      const existingCategory: Category | null =
-        await this.prisma.category.findFirst({
-          where: {
-            slug,
-            NOT: { id },
-          },
-        });
+      let slug: string | undefined;
+      if (updateCategoryDto.name) {
+        slug = this.generateSlug(updateCategoryDto.name);
 
-      if (existingCategory) {
-        throw new ConflictException(
-          `Category with slug "${slug}" already exists`,
-        );
+        const existingCategory: Category | null =
+          await this.prisma.category.findFirst({
+            where: {
+              slug,
+              NOT: { id },
+            },
+          });
+
+        if (existingCategory) {
+          this.logger.warn(`Slug "${slug}" ya existe en otra categoría`);
+          throw new ConflictException(
+            `Category with slug "${slug}" already exists`,
+          );
+        }
       }
-    }
 
-    return this.prisma.category.update({
-      where: { id },
-      data: {
-        ...updateCategoryDto,
-        ...(slug && { slug }),
-      },
-    });
+      const category = await this.prisma.category.update({
+        where: { id },
+        data: {
+          ...updateCategoryDto,
+          ...(slug && { slug }),
+        },
+      });
+
+      this.logger.log(`Categoría ${id} actualizada exitosamente`);
+
+      return category;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error actualizando categoría ${id}`, err.stack, {
+        id,
+      });
+      throw error;
+    }
   }
 
   async remove(id: string): Promise<Category> {
-    await this.findOne(id);
+    this.logger.log(`Desactivando categoría ${id}`);
 
-    const categoryWithProducts = await this.prisma.category.findUnique({
-      where: { id },
-      include: {
-        products: {
-          where: { isActive: true },
+    try {
+      await this.findOne(id);
+
+      const categoryWithProducts = await this.prisma.category.findUnique({
+        where: { id },
+        include: {
+          products: {
+            where: { isActive: true },
+          },
         },
-      },
-    });
+      });
 
-    if (categoryWithProducts && categoryWithProducts.products.length > 0) {
-      throw new BadRequestException(
-        'Cannot delete category with active products',
-      );
+      if (categoryWithProducts && categoryWithProducts.products.length > 0) {
+        this.logger.warn(
+          `Intento de eliminar categoría ${id} con ${categoryWithProducts.products.length} productos activos`,
+        );
+        throw new BadRequestException(
+          'Cannot delete category with active products',
+        );
+      }
+
+      const category = await this.prisma.category.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Categoría ${id} desactivada exitosamente`);
+
+      return category;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error desactivando categoría ${id}`, err.stack, {
+        id,
+      });
+      throw error;
     }
-
-    return this.prisma.category.update({
-      where: { id },
-      data: { isActive: false },
-    });
   }
 
   async createSubcategory(
     createSubcategoryDto: CreateSubcategoryDto,
   ): Promise<Subcategory> {
-    const category: Category | null = await this.prisma.category.findUnique({
-      where: { id: createSubcategoryDto.categoryId },
-    });
-
-    if (!category) {
-      throw new NotFoundException(
-        `Category with ID "${createSubcategoryDto.categoryId}" not found`,
-      );
-    }
-
-    const slug: string = this.generateSubcategorySlug(
-      category.slug,
-      createSubcategoryDto.name,
+    this.logger.log(
+      `Creando subcategoría "${createSubcategoryDto.name}" en categoría ${createSubcategoryDto.categoryId}`,
     );
 
-    const existingSubcategory: Subcategory | null =
-      await this.prisma.subcategory.findFirst({
-        where: {
-          name: createSubcategoryDto.name,
-          categoryId: createSubcategoryDto.categoryId,
+    try {
+      const category: Category | null = await this.prisma.category.findUnique({
+        where: { id: createSubcategoryDto.categoryId },
+      });
+
+      if (!category) {
+        this.logger.warn(
+          `Categoría ${createSubcategoryDto.categoryId} no encontrada`,
+        );
+        throw new NotFoundException(
+          `Category with ID "${createSubcategoryDto.categoryId}" not found`,
+        );
+      }
+
+      const slug: string = this.generateSubcategorySlug(
+        category.slug,
+        createSubcategoryDto.name,
+      );
+
+      const existingSubcategory: Subcategory | null =
+        await this.prisma.subcategory.findFirst({
+          where: {
+            name: createSubcategoryDto.name,
+            categoryId: createSubcategoryDto.categoryId,
+          },
+        });
+
+      if (existingSubcategory) {
+        this.logger.warn(
+          `Subcategoría "${createSubcategoryDto.name}" ya existe en categoría ${createSubcategoryDto.categoryId}`,
+        );
+        throw new ConflictException(
+          `Subcategory "${createSubcategoryDto.name}" already exists in this category`,
+        );
+      }
+
+      const subcategory = await this.prisma.subcategory.create({
+        data: {
+          ...createSubcategoryDto,
+          slug,
         },
       });
 
-    if (existingSubcategory) {
-      throw new ConflictException(
-        `Subcategory "${createSubcategoryDto.name}" already exists in this category`,
+      this.logger.log(
+        `Subcategoría creada exitosamente - ID: ${subcategory.id}, Slug: ${slug}`,
       );
-    }
 
-    return this.prisma.subcategory.create({
-      data: {
-        ...createSubcategoryDto,
-        slug,
-      },
-    });
+      return subcategory;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error creando subcategoría: ${createSubcategoryDto.name}`,
+        err.stack,
+        { subcategoryName: createSubcategoryDto.name },
+      );
+      throw error;
+    }
   }
 
   async findAllSubcategories(categoryId: string): Promise<Subcategory[]> {
@@ -215,6 +297,7 @@ export class CategoriesService {
     });
 
     if (!category) {
+      this.logger.warn(`Categoría ${categoryId} no encontrada`);
       throw new NotFoundException(`Category with ID "${categoryId}" not found`);
     }
 
@@ -240,6 +323,7 @@ export class CategoriesService {
     });
 
     if (!subcategory) {
+      this.logger.warn(`Subcategoría ${id} no encontrada`);
       throw new NotFoundException(`Subcategory with ID "${id}" not found`);
     }
 
@@ -250,72 +334,106 @@ export class CategoriesService {
     id: string,
     updateSubcategoryDto: UpdateSubcategoryDto,
   ): Promise<Subcategory> {
-    const subcategory = await this.findOneSubcategory(id);
+    this.logger.log(`Actualizando subcategoría ${id}`);
 
-    let slug: string | undefined;
-    if (updateSubcategoryDto.name) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: subcategory.categoryId },
-      });
+    try {
+      const subcategory = await this.findOneSubcategory(id);
 
-      if (!category) {
-        throw new NotFoundException('Category not found');
-      }
-
-      slug = this.generateSubcategorySlug(
-        category.slug,
-        updateSubcategoryDto.name,
-      );
-
-      const existingSubcategory: Subcategory | null =
-        await this.prisma.subcategory.findFirst({
-          where: {
-            name: updateSubcategoryDto.name,
-            categoryId: subcategory.categoryId,
-            NOT: { id },
-          },
+      let slug: string | undefined;
+      if (updateSubcategoryDto.name) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: subcategory.categoryId },
         });
 
-      if (existingSubcategory) {
-        throw new ConflictException(
-          `Subcategory "${updateSubcategoryDto.name}" already exists in this category`,
-        );
-      }
-    }
+        if (!category) {
+          throw new NotFoundException('Category not found');
+        }
 
-    return this.prisma.subcategory.update({
-      where: { id },
-      data: {
-        ...updateSubcategoryDto,
-        ...(slug && { slug }),
-      },
-    });
+        slug = this.generateSubcategorySlug(
+          category.slug,
+          updateSubcategoryDto.name,
+        );
+
+        const existingSubcategory: Subcategory | null =
+          await this.prisma.subcategory.findFirst({
+            where: {
+              name: updateSubcategoryDto.name,
+              categoryId: subcategory.categoryId,
+              NOT: { id },
+            },
+          });
+
+        if (existingSubcategory) {
+          this.logger.warn(
+            `Subcategoría "${updateSubcategoryDto.name}" ya existe en esta categoría`,
+          );
+          throw new ConflictException(
+            `Subcategory "${updateSubcategoryDto.name}" already exists in this category`,
+          );
+        }
+      }
+
+      const updated = await this.prisma.subcategory.update({
+        where: { id },
+        data: {
+          ...updateSubcategoryDto,
+          ...(slug && { slug }),
+        },
+      });
+
+      this.logger.log(`Subcategoría ${id} actualizada exitosamente`);
+
+      return updated;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error actualizando subcategoría ${id}`, err.stack, {
+        id,
+      });
+      throw error;
+    }
   }
 
   async removeSubcategory(id: string): Promise<Subcategory> {
-    await this.findOneSubcategory(id);
+    this.logger.log(`Desactivando subcategoría ${id}`);
 
-    const subcategoryWithProducts = await this.prisma.subcategory.findUnique({
-      where: { id },
-      include: {
-        products: {
-          where: { isActive: true },
+    try {
+      await this.findOneSubcategory(id);
+
+      const subcategoryWithProducts = await this.prisma.subcategory.findUnique({
+        where: { id },
+        include: {
+          products: {
+            where: { isActive: true },
+          },
         },
-      },
-    });
+      });
 
-    if (
-      subcategoryWithProducts &&
-      subcategoryWithProducts.products.length > 0
-    ) {
-      throw new BadRequestException(
-        'Cannot delete subcategory with active products',
-      );
+      if (
+        subcategoryWithProducts &&
+        subcategoryWithProducts.products.length > 0
+      ) {
+        this.logger.warn(
+          `Intento de eliminar subcategoría ${id} con ${subcategoryWithProducts.products.length} productos activos`,
+        );
+        throw new BadRequestException(
+          'Cannot delete subcategory with active products',
+        );
+      }
+
+      const subcategory = await this.prisma.subcategory.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Subcategoría ${id} desactivada exitosamente`);
+
+      return subcategory;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error desactivando subcategoría ${id}`, err.stack, {
+        id,
+      });
+      throw error;
     }
-
-    return this.prisma.subcategory.update({
-      where: { id },
-      data: { isActive: false },
-    });
   }
 }

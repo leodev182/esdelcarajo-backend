@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
@@ -15,11 +16,10 @@ import { UpdateCartItemDto } from './dto/update-cart-item.dto';
  */
 @Injectable()
 export class CartService {
+  private readonly logger = new Logger(CartService.name);
+
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * Include estándar para traer items del carrito con toda la info necesaria
-   */
   private readonly cartInclude = {
     items: {
       include: {
@@ -33,7 +33,7 @@ export class CartService {
                 images: {
                   where: { isActive: true },
                   orderBy: { order: 'asc' as const },
-                  take: 1, // Solo la primera imagen
+                  take: 1,
                 },
               },
             },
@@ -48,39 +48,41 @@ export class CartService {
    * Elimina automáticamente los items expirados
    */
   async getOrCreateCart(userId: string) {
-    // Buscar carrito del usuario
     let cart = await this.prisma.cart.findUnique({
       where: { userId },
       include: this.cartInclude,
     });
 
-    // Si existe, limpiar items expirados
     if (cart) {
       const now = new Date();
 
-      // Eliminar items expirados (hard delete)
-      await this.prisma.cartItem.deleteMany({
+      const expired = await this.prisma.cartItem.deleteMany({
         where: {
           cartId: cart.id,
           expiresAt: {
-            lt: now, // menor que ahora = expirado
+            lt: now,
           },
         },
       });
 
-      // Recargar carrito con items vigentes
+      if (expired.count > 0) {
+        this.logger.log(
+          `${expired.count} items expirados eliminados del carrito ${cart.id}`,
+        );
+      }
+
       cart = await this.prisma.cart.findUnique({
         where: { userId },
         include: this.cartInclude,
       });
     }
 
-    // Si no existe, crear nuevo carrito
     if (!cart) {
       cart = await this.prisma.cart.create({
         data: { userId },
         include: this.cartInclude,
       });
+      this.logger.log(`Carrito creado para usuario ${userId}`);
     }
 
     return cart;
@@ -93,81 +95,102 @@ export class CartService {
    * - Cada item tiene su propio expiresAt (+5 días desde ahora)
    */
   async addToCart(userId: string, dto: AddToCartDto) {
-    // 1. Validar que la variante existe y está activa
-    const variant = await this.prisma.productVariant.findFirst({
-      where: {
-        id: dto.variantId,
-        isActive: true,
-        product: { isActive: true },
-      },
-      include: {
-        product: true,
-      },
-    });
+    this.logger.log(
+      `Usuario ${userId} agregando variante ${dto.variantId} al carrito (cantidad: ${dto.quantity})`,
+    );
 
-    if (!variant) {
-      throw new NotFoundException(
-        'La variante del producto no existe o no está disponible',
-      );
-    }
-
-    // 2. Validar stock disponible
-    if (variant.stock < dto.quantity) {
-      throw new BadRequestException(
-        `Stock insuficiente. Disponible: ${variant.stock} unidades`,
-      );
-    }
-
-    // 3. Obtener o crear carrito (limpia items expirados automáticamente)
-    const cart = await this.getOrCreateCart(userId);
-
-    // 4. Calcular nueva fecha de expiración (+5 días desde ahora)
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 5);
-
-    // 5. Verificar si la variante ya está en el carrito
-    const existingItem = await this.prisma.cartItem.findUnique({
-      where: {
-        cartId_variantId: {
-          cartId: cart.id,
-          variantId: dto.variantId,
+    try {
+      const variant = await this.prisma.productVariant.findFirst({
+        where: {
+          id: dto.variantId,
+          isActive: true,
+          product: { isActive: true },
         },
-      },
-    });
+        include: {
+          product: true,
+        },
+      });
 
-    if (existingItem) {
-      // Ya existe → sumar cantidades y renovar expiración
-      const newQuantity = existingItem.quantity + dto.quantity;
-
-      // Validar que no exceda el stock
-      if (newQuantity > variant.stock) {
-        throw new BadRequestException(
-          `Stock insuficiente. En carrito: ${existingItem.quantity}, disponible: ${variant.stock}`,
+      if (!variant) {
+        this.logger.warn(
+          `Variante ${dto.variantId} no encontrada o inactiva para usuario ${userId}`,
+        );
+        throw new NotFoundException(
+          'La variante del producto no existe o no está disponible',
         );
       }
 
-      // Actualizar cantidad y renovar expiración
-      await this.prisma.cartItem.update({
-        where: { id: existingItem.id },
-        data: {
-          quantity: newQuantity,
-          expiresAt, // Renovar expiración
-        },
-      });
-    } else {
-      // No existe → crear nuevo item con su propia expiración
-      await this.prisma.cartItem.create({
-        data: {
-          cartId: cart.id,
-          variantId: dto.variantId,
-          quantity: dto.quantity,
-          expiresAt,
-        },
-      });
-    }
+      if (variant.stock < dto.quantity) {
+        this.logger.warn(
+          `Stock insuficiente para variante ${dto.variantId} - Solicitado: ${dto.quantity}, Disponible: ${variant.stock}`,
+        );
+        throw new BadRequestException(
+          `Stock insuficiente. Disponible: ${variant.stock} unidades`,
+        );
+      }
 
-    // 6. Retornar carrito actualizado con totales
-    return this.getCartWithTotals(userId);
+      const cart = await this.getOrCreateCart(userId);
+
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 5);
+
+      const existingItem = await this.prisma.cartItem.findUnique({
+        where: {
+          cartId_variantId: {
+            cartId: cart.id,
+            variantId: dto.variantId,
+          },
+        },
+      });
+
+      if (existingItem) {
+        const newQuantity = existingItem.quantity + dto.quantity;
+
+        if (newQuantity > variant.stock) {
+          this.logger.warn(
+            `Stock insuficiente al actualizar - Variante ${dto.variantId}: En carrito: ${existingItem.quantity}, Solicitado: ${dto.quantity}, Disponible: ${variant.stock}`,
+          );
+          throw new BadRequestException(
+            `Stock insuficiente. En carrito: ${existingItem.quantity}, disponible: ${variant.stock}`,
+          );
+        }
+
+        await this.prisma.cartItem.update({
+          where: { id: existingItem.id },
+          data: {
+            quantity: newQuantity,
+            expiresAt,
+          },
+        });
+
+        this.logger.log(
+          `Item actualizado en carrito ${cart.id} - Variante ${dto.variantId}: ${existingItem.quantity} → ${newQuantity}`,
+        );
+      } else {
+        await this.prisma.cartItem.create({
+          data: {
+            cartId: cart.id,
+            variantId: dto.variantId,
+            quantity: dto.quantity,
+            expiresAt,
+          },
+        });
+
+        this.logger.log(
+          `Item agregado al carrito ${cart.id} - Variante ${dto.variantId} (cantidad: ${dto.quantity})`,
+        );
+      }
+
+      return this.getCartWithTotals(userId);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error agregando al carrito para usuario ${userId}`,
+        err.stack,
+        { userId, variantId: dto.variantId, quantity: dto.quantity },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -177,7 +200,6 @@ export class CartService {
   async getCartWithTotals(userId: string) {
     const cart = await this.getOrCreateCart(userId);
 
-    // Calcular totales
     let subtotal = 0;
     let totalItems = 0;
 
@@ -199,104 +221,165 @@ export class CartService {
    * Renueva la expiración del item (+5 días desde ahora)
    */
   async updateCartItem(userId: string, itemId: string, dto: UpdateCartItemDto) {
-    // 1. Verificar que el item existe y pertenece al usuario
-    const item = await this.prisma.cartItem.findFirst({
-      where: {
-        id: itemId,
-        cart: { userId },
-      },
-      include: {
-        variant: true,
-      },
-    });
+    this.logger.log(
+      `Usuario ${userId} actualizando item ${itemId} a cantidad ${dto.quantity}`,
+    );
 
-    if (!item) {
-      throw new NotFoundException('Item del carrito no encontrado');
-    }
+    try {
+      const item = await this.prisma.cartItem.findFirst({
+        where: {
+          id: itemId,
+          cart: { userId },
+        },
+        include: {
+          variant: true,
+        },
+      });
 
-    // 2. Verificar si ya expiró
-    const now = new Date();
-    if (new Date(item.expiresAt) < now) {
-      throw new BadRequestException('Este item ya expiró');
-    }
+      if (!item) {
+        this.logger.warn(`Item ${itemId} no encontrado para usuario ${userId}`);
+        throw new NotFoundException('Item del carrito no encontrado');
+      }
 
-    // 3. Validar stock disponible
-    if (dto.quantity > item.variant.stock) {
-      throw new BadRequestException(
-        `Stock insuficiente. Disponible: ${item.variant.stock} unidades`,
+      const now = new Date();
+      if (new Date(item.expiresAt) < now) {
+        this.logger.warn(
+          `Usuario ${userId} intentó actualizar item expirado ${itemId}`,
+        );
+        throw new BadRequestException('Este item ya expiró');
+      }
+
+      if (dto.quantity > item.variant.stock) {
+        this.logger.warn(
+          `Stock insuficiente al actualizar item ${itemId} - Solicitado: ${dto.quantity}, Disponible: ${item.variant.stock}`,
+        );
+        throw new BadRequestException(
+          `Stock insuficiente. Disponible: ${item.variant.stock} unidades`,
+        );
+      }
+
+      const newExpiresAt = new Date();
+      newExpiresAt.setDate(newExpiresAt.getDate() + 5);
+
+      await this.prisma.cartItem.update({
+        where: { id: itemId },
+        data: {
+          quantity: dto.quantity,
+          expiresAt: newExpiresAt,
+        },
+      });
+
+      this.logger.log(
+        `Item ${itemId} actualizado exitosamente - Nueva cantidad: ${dto.quantity}`,
       );
+
+      return this.getCartWithTotals(userId);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error actualizando item ${itemId} para usuario ${userId}`,
+        err.stack,
+        { userId, itemId, quantity: dto.quantity },
+      );
+      throw error;
     }
-
-    // 4. Actualizar cantidad y renovar expiración
-    const newExpiresAt = new Date();
-    newExpiresAt.setDate(newExpiresAt.getDate() + 5);
-
-    await this.prisma.cartItem.update({
-      where: { id: itemId },
-      data: {
-        quantity: dto.quantity,
-        expiresAt: newExpiresAt,
-      },
-    });
-
-    // 5. Retornar carrito actualizado
-    return this.getCartWithTotals(userId);
   }
 
   /**
    * Eliminar item del carrito (hard delete)
    */
   async removeCartItem(userId: string, itemId: string) {
-    // Verificar que el item existe y pertenece al usuario
-    const item = await this.prisma.cartItem.findFirst({
-      where: {
-        id: itemId,
-        cart: { userId },
-      },
-    });
+    this.logger.log(`Usuario ${userId} eliminando item ${itemId} del carrito`);
 
-    if (!item) {
-      throw new NotFoundException('Item del carrito no encontrado');
+    try {
+      const item = await this.prisma.cartItem.findFirst({
+        where: {
+          id: itemId,
+          cart: { userId },
+        },
+      });
+
+      if (!item) {
+        this.logger.warn(`Item ${itemId} no encontrado para usuario ${userId}`);
+        throw new NotFoundException('Item del carrito no encontrado');
+      }
+
+      await this.prisma.cartItem.delete({
+        where: { id: itemId },
+      });
+
+      this.logger.log(`Item ${itemId} eliminado exitosamente`);
+
+      return this.getCartWithTotals(userId);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error eliminando item ${itemId} para usuario ${userId}`,
+        err.stack,
+        { userId, itemId },
+      );
+      throw error;
     }
-
-    // Hard delete
-    await this.prisma.cartItem.delete({
-      where: { id: itemId },
-    });
-
-    return this.getCartWithTotals(userId);
   }
 
   /**
    * Vaciar carrito completo (hard delete de todos los items)
    */
   async clearCart(userId: string) {
-    const cart = await this.getOrCreateCart(userId);
+    this.logger.log(`Usuario ${userId} vaciando carrito completo`);
 
-    await this.prisma.cartItem.deleteMany({
-      where: { cartId: cart.id },
-    });
+    try {
+      const cart = await this.getOrCreateCart(userId);
 
-    return this.getCartWithTotals(userId);
+      const result = await this.prisma.cartItem.deleteMany({
+        where: { cartId: cart.id },
+      });
+
+      this.logger.log(
+        `Carrito ${cart.id} vaciado - ${result.count} items eliminados`,
+      );
+
+      return this.getCartWithTotals(userId);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error vaciando carrito para usuario ${userId}`,
+        err.stack,
+        { userId },
+      );
+      throw error;
+    }
   }
 
   /**
    * Limpiar items expirados de TODOS los carritos (usado por CRON)
    */
   async cleanupExpiredItems() {
-    const now = new Date();
+    this.logger.log('Ejecutando limpieza de items expirados (CRON)');
 
-    const result = await this.prisma.cartItem.deleteMany({
-      where: {
-        expiresAt: {
-          lt: now,
+    try {
+      const now = new Date();
+
+      const result = await this.prisma.cartItem.deleteMany({
+        where: {
+          expiresAt: {
+            lt: now,
+          },
         },
-      },
-    });
+      });
 
-    return {
-      deletedCount: result.count,
-      timestamp: now,
-    };
+      this.logger.log(
+        `Limpieza completada - ${result.count} items expirados eliminados`,
+      );
+
+      return {
+        deletedCount: result.count,
+        timestamp: now,
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error en limpieza de items expirados', err.stack);
+      throw error;
+    }
   }
 }

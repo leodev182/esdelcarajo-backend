@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -15,6 +16,8 @@ import { Product, ProductVariant, ProductImage } from '@prisma/client';
 
 @Injectable()
 export class ProductsService {
+  private readonly logger = new Logger(ProductsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -33,163 +36,203 @@ export class ProductsService {
    * Crea un nuevo producto
    */
   async create(createProductDto: CreateProductDto): Promise<Product> {
-    const slug: string = this.generateSlug(createProductDto.name);
+    this.logger.log(`Creando producto: ${createProductDto.name}`);
 
-    const existingProduct: Product | null =
-      await this.prisma.product.findUnique({
-        where: { slug },
+    try {
+      const slug: string = this.generateSlug(createProductDto.name);
+
+      const existingProduct: Product | null =
+        await this.prisma.product.findUnique({
+          where: { slug },
+        });
+
+      if (existingProduct) {
+        this.logger.warn(`Producto con slug "${slug}" ya existe`);
+        throw new ConflictException(
+          `Ya existe un producto con el slug "${slug}"`,
+        );
+      }
+
+      const category = await this.prisma.category.findUnique({
+        where: { id: createProductDto.categoryId },
       });
 
-    if (existingProduct) {
-      throw new ConflictException(
-        `Ya existe un producto con el slug "${slug}"`,
-      );
-    }
-
-    const category = await this.prisma.category.findUnique({
-      where: { id: createProductDto.categoryId },
-    });
-
-    if (!category) {
-      throw new NotFoundException(
-        `Categoría con ID "${createProductDto.categoryId}" no encontrada`,
-      );
-    }
-
-    if (createProductDto.subcategoryId) {
-      const subcategory = await this.prisma.subcategory.findUnique({
-        where: { id: createProductDto.subcategoryId },
-      });
-
-      if (!subcategory) {
+      if (!category) {
+        this.logger.warn(
+          `Categoría ${createProductDto.categoryId} no encontrada`,
+        );
         throw new NotFoundException(
-          `Subcategoría con ID "${createProductDto.subcategoryId}" no encontrada`,
+          `Categoría con ID "${createProductDto.categoryId}" no encontrada`,
         );
       }
 
-      if (subcategory.categoryId !== createProductDto.categoryId) {
-        throw new BadRequestException(
-          'La subcategoría no pertenece a la categoría especificada',
-        );
+      if (createProductDto.subcategoryId) {
+        const subcategory = await this.prisma.subcategory.findUnique({
+          where: { id: createProductDto.subcategoryId },
+        });
+
+        if (!subcategory) {
+          this.logger.warn(
+            `Subcategoría ${createProductDto.subcategoryId} no encontrada`,
+          );
+          throw new NotFoundException(
+            `Subcategoría con ID "${createProductDto.subcategoryId}" no encontrada`,
+          );
+        }
+
+        if (subcategory.categoryId !== createProductDto.categoryId) {
+          this.logger.warn(
+            `Subcategoría ${createProductDto.subcategoryId} no pertenece a categoría ${createProductDto.categoryId}`,
+          );
+          throw new BadRequestException(
+            'La subcategoría no pertenece a la categoría especificada',
+          );
+        }
       }
+
+      const product = await this.prisma.product.create({
+        data: {
+          ...createProductDto,
+          slug,
+        },
+        include: {
+          category: true,
+          subcategory: true,
+        },
+      });
+
+      this.logger.log(
+        `Producto creado exitosamente - ID: ${product.id}, Slug: ${slug}`,
+      );
+
+      return product;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error creando producto: ${createProductDto.name}`,
+        err.stack,
+        { productName: createProductDto.name },
+      );
+      throw error;
     }
-
-    return this.prisma.product.create({
-      data: {
-        ...createProductDto,
-        slug,
-      },
-      include: {
-        category: true,
-        subcategory: true,
-      },
-    });
   }
 
   /**
    * Obtiene productos con filtros, búsqueda y paginación
    */
   async findAll(query: QueryProductsDto) {
-    const {
-      search,
-      categoryId,
-      subcategoryId,
-      gender,
-      size,
-      isFeatured,
-      inStock,
-      page = 1,
-      limit = 12,
-      sortBy = 'createdAt',
-      sortOrder = 'desc',
-    } = query;
+    this.logger.log(`Consultando productos - Página: ${query.page || 1}`);
 
-    const skip: number = (page - 1) * limit;
+    try {
+      const {
+        search,
+        categoryId,
+        subcategoryId,
+        gender,
+        size,
+        isFeatured,
+        inStock,
+        page = 1,
+        limit = 12,
+        sortBy = 'createdAt',
+        sortOrder = 'desc',
+      } = query;
 
-    type WhereClause = {
-      isActive: boolean;
-      OR?: Array<{
-        name?: { contains: string; mode: 'insensitive' };
-        description?: { contains: string; mode: 'insensitive' };
-      }>;
-      categoryId?: string;
-      subcategoryId?: string;
-      isFeatured?: boolean;
-      variants?: {
-        some: {
-          isActive: boolean;
-          gender?: typeof gender;
-          size?: typeof size;
-          stock?: { gt: number };
+      const skip: number = (page - 1) * limit;
+
+      type WhereClause = {
+        isActive: boolean;
+        OR?: Array<{
+          name?: { contains: string; mode: 'insensitive' };
+          description?: { contains: string; mode: 'insensitive' };
+        }>;
+        categoryId?: string;
+        subcategoryId?: string;
+        isFeatured?: boolean;
+        variants?: {
+          some: {
+            isActive: boolean;
+            gender?: typeof gender;
+            size?: typeof size;
+            stock?: { gt: number };
+          };
         };
       };
-    };
 
-    const where: WhereClause = {
-      isActive: true,
-    };
+      const where: WhereClause = {
+        isActive: true,
+      };
 
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ];
+      }
 
-    if (categoryId) {
-      where.categoryId = categoryId;
-    }
+      if (categoryId) {
+        where.categoryId = categoryId;
+      }
 
-    if (subcategoryId) {
-      where.subcategoryId = subcategoryId;
-    }
+      if (subcategoryId) {
+        where.subcategoryId = subcategoryId;
+      }
 
-    if (isFeatured !== undefined) {
-      where.isFeatured = isFeatured;
-    }
+      if (isFeatured !== undefined) {
+        where.isFeatured = isFeatured;
+      }
 
-    if (gender || size || inStock) {
-      where.variants = {
-        some: {
-          isActive: true,
-          ...(gender && { gender }),
-          ...(size && { size }),
-          ...(inStock && { stock: { gt: 0 } }),
+      if (gender || size || inStock) {
+        where.variants = {
+          some: {
+            isActive: true,
+            ...(gender && { gender }),
+            ...(size && { size }),
+            ...(inStock && { stock: { gt: 0 } }),
+          },
+        };
+      }
+
+      const [products, total] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { [sortBy]: sortOrder },
+          include: {
+            category: true,
+            subcategory: true,
+            variants: {
+              where: { isActive: true },
+              orderBy: { createdAt: 'asc' },
+            },
+            images: {
+              where: { isActive: true },
+              orderBy: { order: 'asc' },
+            },
+          },
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+
+      this.logger.log(
+        `${total} productos encontrados - Página ${page}/${Math.ceil(total / limit)}`,
+      );
+
+      return {
+        data: products,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
         },
       };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error consultando productos', err.stack);
+      throw error;
     }
-
-    const [products, total] = await Promise.all([
-      this.prisma.product.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { [sortBy]: sortOrder },
-        include: {
-          category: true,
-          subcategory: true,
-          variants: {
-            where: { isActive: true },
-            orderBy: { createdAt: 'asc' },
-          },
-          images: {
-            where: { isActive: true },
-            orderBy: { order: 'asc' },
-          },
-        },
-      }),
-      this.prisma.product.count({ where }),
-    ]);
-
-    return {
-      data: products,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   /**
@@ -218,6 +261,7 @@ export class ProductsService {
     });
 
     if (!product) {
+      this.logger.warn(`Producto con ID "${id}" no encontrado`);
       throw new NotFoundException(`Producto con ID "${id}" no encontrado`);
     }
 
@@ -253,6 +297,7 @@ export class ProductsService {
     });
 
     if (!product) {
+      this.logger.warn(`Producto con slug "${slug}" no encontrado`);
       throw new NotFoundException(`Producto con slug "${slug}" no encontrado`);
     }
 
@@ -266,74 +311,105 @@ export class ProductsService {
     id: string,
     updateProductDto: UpdateProductDto,
   ): Promise<Product> {
-    await this.findOne(id);
+    this.logger.log(`Actualizando producto ${id}`);
 
-    let slug: string | undefined;
-    if (updateProductDto.name) {
-      slug = this.generateSlug(updateProductDto.name);
+    try {
+      await this.findOne(id);
 
-      const existingProduct: Product | null =
-        await this.prisma.product.findFirst({
-          where: {
-            slug,
-            NOT: { id },
-          },
+      let slug: string | undefined;
+      if (updateProductDto.name) {
+        slug = this.generateSlug(updateProductDto.name);
+
+        const existingProduct: Product | null =
+          await this.prisma.product.findFirst({
+            where: {
+              slug,
+              NOT: { id },
+            },
+          });
+
+        if (existingProduct) {
+          this.logger.warn(`Slug "${slug}" ya existe en otro producto`);
+          throw new ConflictException(
+            `Ya existe un producto con el slug "${slug}"`,
+          );
+        }
+      }
+
+      if (updateProductDto.categoryId) {
+        const category = await this.prisma.category.findUnique({
+          where: { id: updateProductDto.categoryId },
         });
 
-      if (existingProduct) {
-        throw new ConflictException(
-          `Ya existe un producto con el slug "${slug}"`,
-        );
+        if (!category) {
+          this.logger.warn(
+            `Categoría ${updateProductDto.categoryId} no encontrada`,
+          );
+          throw new NotFoundException(
+            `Categoría con ID "${updateProductDto.categoryId}" no encontrada`,
+          );
+        }
       }
-    }
 
-    if (updateProductDto.categoryId) {
-      const category = await this.prisma.category.findUnique({
-        where: { id: updateProductDto.categoryId },
+      if (updateProductDto.subcategoryId) {
+        const subcategory = await this.prisma.subcategory.findUnique({
+          where: { id: updateProductDto.subcategoryId },
+        });
+
+        if (!subcategory) {
+          this.logger.warn(
+            `Subcategoría ${updateProductDto.subcategoryId} no encontrada`,
+          );
+          throw new NotFoundException(
+            `Subcategoría con ID "${updateProductDto.subcategoryId}" no encontrada`,
+          );
+        }
+      }
+
+      const product = await this.prisma.product.update({
+        where: { id },
+        data: {
+          ...updateProductDto,
+          ...(slug && { slug }),
+        },
+        include: {
+          category: true,
+          subcategory: true,
+        },
       });
 
-      if (!category) {
-        throw new NotFoundException(
-          `Categoría con ID "${updateProductDto.categoryId}" no encontrada`,
-        );
-      }
+      this.logger.log(`Producto ${id} actualizado exitosamente`);
+
+      return product;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error actualizando producto ${id}`, err.stack, { id });
+      throw error;
     }
-
-    if (updateProductDto.subcategoryId) {
-      const subcategory = await this.prisma.subcategory.findUnique({
-        where: { id: updateProductDto.subcategoryId },
-      });
-
-      if (!subcategory) {
-        throw new NotFoundException(
-          `Subcategoría con ID "${updateProductDto.subcategoryId}" no encontrada`,
-        );
-      }
-    }
-
-    return this.prisma.product.update({
-      where: { id },
-      data: {
-        ...updateProductDto,
-        ...(slug && { slug }),
-      },
-      include: {
-        category: true,
-        subcategory: true,
-      },
-    });
   }
 
   /**
    * Elimina un producto (soft delete)
    */
   async remove(id: string): Promise<Product> {
-    await this.findOne(id);
+    this.logger.log(`Desactivando producto ${id}`);
 
-    return this.prisma.product.update({
-      where: { id },
-      data: { isActive: false },
-    });
+    try {
+      await this.findOne(id);
+
+      const product = await this.prisma.product.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Producto ${id} desactivado exitosamente`);
+
+      return product;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error desactivando producto ${id}`, err.stack, { id });
+      throw error;
+    }
   }
 
   /**
@@ -342,35 +418,59 @@ export class ProductsService {
   async createVariant(
     createVariantDto: CreateVariantDto,
   ): Promise<ProductVariant> {
-    const product = await this.prisma.product.findUnique({
-      where: { id: createVariantDto.productId },
-    });
+    this.logger.log(
+      `Creando variante para producto ${createVariantDto.productId} - SKU: ${createVariantDto.sku}`,
+    );
 
-    if (!product) {
-      throw new NotFoundException(
-        `Producto con ID "${createVariantDto.productId}" no encontrado`,
-      );
-    }
-
-    const existingVariant: ProductVariant | null =
-      await this.prisma.productVariant.findUnique({
-        where: { sku: createVariantDto.sku },
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: createVariantDto.productId },
       });
 
-    if (existingVariant) {
-      throw new ConflictException(
-        `Ya existe una variante con el SKU "${createVariantDto.sku}"`,
+      if (!product) {
+        this.logger.warn(
+          `Producto ${createVariantDto.productId} no encontrado`,
+        );
+        throw new NotFoundException(
+          `Producto con ID "${createVariantDto.productId}" no encontrado`,
+        );
+      }
+
+      const existingVariant: ProductVariant | null =
+        await this.prisma.productVariant.findUnique({
+          where: { sku: createVariantDto.sku },
+        });
+
+      if (existingVariant) {
+        this.logger.warn(`SKU "${createVariantDto.sku}" ya existe`);
+        throw new ConflictException(
+          `Ya existe una variante con el SKU "${createVariantDto.sku}"`,
+        );
+      }
+
+      const isActive: boolean = createVariantDto.stock > 0;
+
+      const variant = await this.prisma.productVariant.create({
+        data: {
+          ...createVariantDto,
+          isActive,
+        },
+      });
+
+      this.logger.log(
+        `Variante creada exitosamente - ID: ${variant.id}, SKU: ${variant.sku}, Stock: ${variant.stock}`,
       );
+
+      return variant;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error creando variante - SKU: ${createVariantDto.sku}`,
+        err.stack,
+        { sku: createVariantDto.sku, productId: createVariantDto.productId },
+      );
+      throw error;
     }
-
-    const isActive: boolean = createVariantDto.stock > 0;
-
-    return this.prisma.productVariant.create({
-      data: {
-        ...createVariantDto,
-        isActive,
-      },
-    });
   }
 
   /**
@@ -382,6 +482,7 @@ export class ProductsService {
     });
 
     if (!product) {
+      this.logger.warn(`Producto ${productId} no encontrado`);
       throw new NotFoundException(
         `Producto con ID "${productId}" no encontrado`,
       );
@@ -404,138 +505,210 @@ export class ProductsService {
     id: string,
     updateVariantDto: UpdateVariantDto,
   ): Promise<ProductVariant> {
-    const variant = await this.prisma.productVariant.findUnique({
-      where: { id },
-    });
+    this.logger.log(`Actualizando variante ${id}`);
 
-    if (!variant) {
-      throw new NotFoundException(`Variante con ID "${id}" no encontrada`);
-    }
+    try {
+      const variant = await this.prisma.productVariant.findUnique({
+        where: { id },
+      });
 
-    if (updateVariantDto.sku && updateVariantDto.sku !== variant.sku) {
-      const existingVariant: ProductVariant | null =
-        await this.prisma.productVariant.findUnique({
-          where: { sku: updateVariantDto.sku },
-        });
+      if (!variant) {
+        this.logger.warn(`Variante ${id} no encontrada`);
+        throw new NotFoundException(`Variante con ID "${id}" no encontrada`);
+      }
 
-      if (existingVariant) {
-        throw new ConflictException(
-          `Ya existe una variante con el SKU "${updateVariantDto.sku}"`,
+      if (updateVariantDto.sku && updateVariantDto.sku !== variant.sku) {
+        const existingVariant: ProductVariant | null =
+          await this.prisma.productVariant.findUnique({
+            where: { sku: updateVariantDto.sku },
+          });
+
+        if (existingVariant) {
+          this.logger.warn(`SKU "${updateVariantDto.sku}" ya existe`);
+          throw new ConflictException(
+            `Ya existe una variante con el SKU "${updateVariantDto.sku}"`,
+          );
+        }
+      }
+
+      const isActive: boolean =
+        updateVariantDto.stock !== undefined
+          ? updateVariantDto.stock > 0
+          : variant.stock > 0;
+
+      const updatedVariant = await this.prisma.productVariant.update({
+        where: { id },
+        data: {
+          ...updateVariantDto,
+          isActive,
+        },
+      });
+
+      if (updateVariantDto.stock === 0) {
+        this.logger.warn(
+          `Variante ${id} desactivada automáticamente por stock 0`,
         );
       }
+
+      this.logger.log(`Variante ${id} actualizada exitosamente`);
+
+      return updatedVariant;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error actualizando variante ${id}`, err.stack, { id });
+      throw error;
     }
-
-    const isActive: boolean =
-      updateVariantDto.stock !== undefined
-        ? updateVariantDto.stock > 0
-        : variant.stock > 0;
-
-    return this.prisma.productVariant.update({
-      where: { id },
-      data: {
-        ...updateVariantDto,
-        isActive,
-      },
-    });
   }
 
   /**
    * Elimina una variante (soft delete)
    */
   async removeVariant(id: string): Promise<ProductVariant> {
-    const variant = await this.prisma.productVariant.findUnique({
-      where: { id },
-    });
+    this.logger.log(`Desactivando variante ${id}`);
 
-    if (!variant) {
-      throw new NotFoundException(`Variante con ID "${id}" no encontrada`);
+    try {
+      const variant = await this.prisma.productVariant.findUnique({
+        where: { id },
+      });
+
+      if (!variant) {
+        this.logger.warn(`Variante ${id} no encontrada`);
+        throw new NotFoundException(`Variante con ID "${id}" no encontrada`);
+      }
+
+      const deletedVariant = await this.prisma.productVariant.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Variante ${id} desactivada exitosamente`);
+
+      return deletedVariant;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error desactivando variante ${id}`, err.stack, { id });
+      throw error;
     }
-
-    return this.prisma.productVariant.update({
-      where: { id },
-      data: { isActive: false },
-    });
   }
 
   /**
    * Agrega una imagen a un producto
    * Valida que no se excedan 5 imágenes por producto
    */
-  /**
-   * Agrega una imagen a un producto
-   * Valida que no se excedan 5 imágenes por producto
-   */
   async addImage(createImageDto: CreateProductImageDto): Promise<ProductImage> {
-    const product = await this.prisma.product.findUnique({
-      where: { id: createImageDto.productId },
-      include: {
-        images: {
-          where: { isActive: true },
+    this.logger.log(`Agregando imagen a producto ${createImageDto.productId}`);
+
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: createImageDto.productId },
+        include: {
+          images: {
+            where: { isActive: true },
+          },
         },
-      },
-    });
-
-    if (!product) {
-      throw new NotFoundException(
-        `Producto con ID "${createImageDto.productId}" no encontrado`,
-      );
-    }
-
-    // Validar variante si se especificó
-    if (createImageDto.variantId) {
-      const variant = await this.prisma.productVariant.findUnique({
-        where: { id: createImageDto.variantId },
       });
 
-      if (!variant) {
+      if (!product) {
+        this.logger.warn(`Producto ${createImageDto.productId} no encontrado`);
         throw new NotFoundException(
-          `Variante con ID "${createImageDto.variantId}" no encontrada`,
+          `Producto con ID "${createImageDto.productId}" no encontrado`,
         );
       }
 
-      if (variant.productId !== createImageDto.productId) {
+      if (createImageDto.variantId) {
+        const variant = await this.prisma.productVariant.findUnique({
+          where: { id: createImageDto.variantId },
+        });
+
+        if (!variant) {
+          this.logger.warn(
+            `Variante ${createImageDto.variantId} no encontrada`,
+          );
+          throw new NotFoundException(
+            `Variante con ID "${createImageDto.variantId}" no encontrada`,
+          );
+        }
+
+        if (variant.productId !== createImageDto.productId) {
+          this.logger.warn(
+            `Variante ${createImageDto.variantId} no pertenece a producto ${createImageDto.productId}`,
+          );
+          throw new BadRequestException(
+            'La variante no pertenece al producto especificado',
+          );
+        }
+      }
+
+      if (product.images.length >= 5) {
+        this.logger.warn(
+          `Producto ${createImageDto.productId} ya tiene 5 imágenes`,
+        );
         throw new BadRequestException(
-          'La variante no pertenece al producto especificado',
+          'No se pueden agregar más de 5 imágenes por producto',
         );
       }
-    }
 
-    if (product.images.length >= 5) {
-      throw new BadRequestException(
-        'No se pueden agregar más de 5 imágenes por producto',
+      const existingImageWithOrder = product.images.find(
+        (img) => img.order === createImageDto.order,
       );
-    }
 
-    const existingImageWithOrder = product.images.find(
-      (img) => img.order === createImageDto.order,
-    );
+      if (existingImageWithOrder) {
+        this.logger.warn(
+          `Orden ${createImageDto.order} ya existe para producto ${createImageDto.productId}`,
+        );
+        throw new ConflictException(
+          `Ya existe una imagen con orden ${createImageDto.order} para este producto`,
+        );
+      }
 
-    if (existingImageWithOrder) {
-      throw new ConflictException(
-        `Ya existe una imagen con orden ${createImageDto.order} para este producto`,
+      const image = await this.prisma.productImage.create({
+        data: createImageDto,
+      });
+
+      this.logger.log(
+        `Imagen agregada exitosamente - ID: ${image.id}, Producto: ${createImageDto.productId}`,
       );
-    }
 
-    return this.prisma.productImage.create({
-      data: createImageDto,
-    });
+      return image;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error agregando imagen a producto ${createImageDto.productId}`,
+        err.stack,
+        { productId: createImageDto.productId },
+      );
+      throw error;
+    }
   }
 
   /**
    * Elimina una imagen de producto (soft delete)
    */
   async removeImage(id: string): Promise<ProductImage> {
-    const image = await this.prisma.productImage.findUnique({
-      where: { id },
-    });
+    this.logger.log(`Desactivando imagen ${id}`);
 
-    if (!image) {
-      throw new NotFoundException(`Imagen con ID "${id}" no encontrada`);
+    try {
+      const image = await this.prisma.productImage.findUnique({
+        where: { id },
+      });
+
+      if (!image) {
+        this.logger.warn(`Imagen ${id} no encontrada`);
+        throw new NotFoundException(`Imagen con ID "${id}" no encontrada`);
+      }
+
+      const deletedImage = await this.prisma.productImage.update({
+        where: { id },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Imagen ${id} desactivada exitosamente`);
+
+      return deletedImage;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error desactivando imagen ${id}`, err.stack, { id });
+      throw error;
     }
-
-    return this.prisma.productImage.update({
-      where: { id },
-      data: { isActive: false },
-    });
   }
 }

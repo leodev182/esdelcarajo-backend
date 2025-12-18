@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { User } from '@prisma/client';
@@ -16,6 +16,8 @@ import { randomBytes } from 'crypto';
  */
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private jwtService: JwtService,
     private prisma: PrismaService,
@@ -29,38 +31,48 @@ export class AuthService {
    * @returns LoginResponseDto con tokens y datos del usuario
    */
   async login(user: User): Promise<LoginResponseDto> {
-    // Payload del JWT (lo que se codifica en el token)
-    const payload = {
-      sub: user.id, // "subject" - ID del usuario (estándar JWT)
-      email: user.email, // Email para referencia
-      role: user.role, // Rol para autorización
-    };
+    this.logger.log(`Generando tokens para usuario ${user.email} (${user.id})`);
 
-    // Generar el JWT (access token)
-    const accessToken = this.jwtService.sign(payload);
-
-    // Generar el refresh token y guardarlo en DB
-    const refreshToken = await this.generateRefreshToken(user.id);
-
-    // Calcular tiempo de expiración en segundos
-    const expiresIn = this.getTokenExpirationInSeconds(
-      this.configService.get('JWT_EXPIRES_IN') || '15m',
-    );
-
-    // Retornar respuesta formateada
-    return {
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      token_type: 'Bearer',
-      expires_in: expiresIn,
-      user: {
-        id: user.id,
+    try {
+      const payload = {
+        sub: user.id,
         email: user.email,
-        name: user.name,
-        avatar: user.avatar,
         role: user.role,
-      },
-    };
+      };
+
+      const accessToken = this.jwtService.sign(payload);
+      const refreshToken = await this.generateRefreshToken(user.id);
+
+      const expiresIn = this.getTokenExpirationInSeconds(
+        this.configService.get('JWT_EXPIRES_IN') || '15m',
+      );
+
+      this.logger.log(
+        `Tokens generados exitosamente para ${user.email} - Rol: ${user.role}`,
+      );
+
+      return {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        token_type: 'Bearer',
+        expires_in: expiresIn,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatar: user.avatar,
+          role: user.role,
+        },
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error generando tokens para ${user.email}`,
+        err.stack,
+        { userId: user.id, email: user.email },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -71,38 +83,50 @@ export class AuthService {
    * @throws UnauthorizedException si el token es inválido o expiró
    */
   async refreshAccessToken(refreshToken: string): Promise<LoginResponseDto> {
-    // Buscar el token en la base de datos
-    const storedToken = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-      include: { user: true },
-    });
+    this.logger.log('Validando refresh token');
 
-    // Validar que el token existe
-    if (!storedToken) {
-      throw new UnauthorizedException('Refresh token inválido');
-    }
+    try {
+      const storedToken = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+        include: { user: true },
+      });
 
-    // Validar que no haya expirado
-    if (new Date() > storedToken.expiresAt) {
-      // Eliminar token expirado de la DB
+      if (!storedToken) {
+        this.logger.warn('Intento de refresh con token inválido');
+        throw new UnauthorizedException('Refresh token inválido');
+      }
+
+      if (new Date() > storedToken.expiresAt) {
+        this.logger.warn(
+          `Refresh token expirado para usuario ${storedToken.userId}`,
+        );
+        await this.prisma.refreshToken.delete({
+          where: { id: storedToken.id },
+        });
+        throw new UnauthorizedException('Refresh token expirado');
+      }
+
+      if (!storedToken.user.isActive) {
+        this.logger.warn(
+          `Usuario inactivo intentó renovar token: ${storedToken.user.email}`,
+        );
+        throw new UnauthorizedException('Usuario inactivo');
+      }
+
       await this.prisma.refreshToken.delete({
         where: { id: storedToken.id },
       });
-      throw new UnauthorizedException('Refresh token expirado');
+
+      this.logger.log(
+        `Token renovado exitosamente para ${storedToken.user.email}`,
+      );
+
+      return this.login(storedToken.user);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error renovando access token', err.stack);
+      throw error;
     }
-
-    // Validar que el usuario esté activo
-    if (!storedToken.user.isActive) {
-      throw new UnauthorizedException('Usuario inactivo');
-    }
-
-    // Eliminar el refresh token viejo (rotación de tokens)
-    await this.prisma.refreshToken.delete({
-      where: { id: storedToken.id },
-    });
-
-    // Generar nuevos tokens
-    return this.login(storedToken.user);
   }
 
   /**
@@ -111,9 +135,21 @@ export class AuthService {
    * @param token - Refresh token a revocar
    */
   async revokeRefreshToken(token: string): Promise<void> {
-    await this.prisma.refreshToken.deleteMany({
-      where: { token },
-    });
+    this.logger.log('Revocando refresh token');
+
+    try {
+      const result = await this.prisma.refreshToken.deleteMany({
+        where: { token },
+      });
+
+      if (result.count > 0) {
+        this.logger.log(`Refresh token revocado exitosamente`);
+      }
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error revocando refresh token', err.stack);
+      throw error;
+    }
   }
 
   /**
@@ -122,9 +158,25 @@ export class AuthService {
    * @param userId - ID del usuario
    */
   async revokeAllUserTokens(userId: string): Promise<void> {
-    await this.prisma.refreshToken.deleteMany({
-      where: { userId },
-    });
+    this.logger.log(`Revocando todos los tokens del usuario ${userId}`);
+
+    try {
+      const result = await this.prisma.refreshToken.deleteMany({
+        where: { userId },
+      });
+
+      this.logger.log(
+        `${result.count} tokens revocados para usuario ${userId}`,
+      );
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error revocando tokens del usuario ${userId}`,
+        err.stack,
+        { userId },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -134,16 +186,13 @@ export class AuthService {
    * @returns Token generado (string hexadecimal)
    */
   private async generateRefreshToken(userId: string): Promise<string> {
-    // Generar token aleatorio de 128 caracteres
     const token = randomBytes(64).toString('hex');
 
-    // Obtener tiempo de expiración del refresh token desde .env
     const expiresIn =
       this.configService.get<string>('REFRESH_TOKEN_EXPIRES_IN') || '7d';
     const expirationSeconds = this.getTokenExpirationInSeconds(expiresIn);
     const expiresAt = new Date(Date.now() + expirationSeconds * 1000);
 
-    // Guardar en la base de datos
     await this.prisma.refreshToken.create({
       data: {
         token,
@@ -151,6 +200,8 @@ export class AuthService {
         expiresAt,
       },
     });
+
+    this.logger.log(`Refresh token generado para usuario ${userId}`);
 
     return token;
   }
@@ -165,22 +216,20 @@ export class AuthService {
    * @returns Tiempo de expiración en segundos
    */
   private getTokenExpirationInSeconds(expiration: string): number {
-    // Parsear el string de expiración
     const timeValue = parseInt(expiration.slice(0, -1), 10);
     const timeUnit = expiration.slice(-1);
 
-    // Convertir a segundos según la unidad
     switch (timeUnit) {
-      case 'd': // días
+      case 'd':
         return timeValue * 24 * 60 * 60;
-      case 'h': // horas
+      case 'h':
         return timeValue * 60 * 60;
-      case 'm': // minutos
+      case 'm':
         return timeValue * 60;
-      case 's': // segundos
+      case 's':
         return timeValue;
       default:
-        return 7 * 24 * 60 * 60; // Default: 7 días
+        return 7 * 24 * 60 * 60;
     }
   }
 
@@ -196,8 +245,6 @@ export class AuthService {
    * @returns Usuario si las credenciales son válidas, null si no
    */
   validateUser(email: string, password: string): Promise<User | null> {
-    // TODO: Implementar si agregas login con email/password
-    // Por ahora solo usamos Google OAuth
     return null;
   }
 }

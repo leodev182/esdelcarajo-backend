@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueryOrdersDto } from './dto/query-orders.dto';
@@ -9,141 +10,105 @@ import { OrderStatus } from '@prisma/client';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(AdminService.name);
 
-  // ==================== DASHBOARD ====================
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Obtener estadísticas generales del dashboard
    */
   async getDashboardStats() {
-    // Contar productos
-    const [totalProducts, activeProducts] = await Promise.all([
-      this.prisma.product.count(),
-      this.prisma.product.count({ where: { isActive: true } }),
-    ]);
+    this.logger.log('Consultando estadísticas del dashboard');
 
-    // Contar usuarios por rol
-    const [totalUsers, adminUsers, superAdminUsers] = await Promise.all([
-      this.prisma.user.count({ where: { isActive: true } }),
-      this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } }),
-      this.prisma.user.count({
-        where: { role: 'SUPER_ADMIN', isActive: true },
-      }),
-    ]);
+    try {
+      const [totalProducts, activeProducts] = await Promise.all([
+        this.prisma.product.count(),
+        this.prisma.product.count({ where: { isActive: true } }),
+      ]);
 
-    // Contar órdenes por estado
-    const [
-      totalOrders,
-      pendingPayment,
-      confirmedPayment,
-      inTransit,
-      delivered,
-      cancelled,
-    ] = await Promise.all([
-      this.prisma.order.count(),
-      this.prisma.order.count({ where: { status: 'PENDING_PAYMENT' } }),
-      this.prisma.order.count({ where: { status: 'PAGO_CONFIRMADO' } }),
-      this.prisma.order.count({ where: { status: 'EN_CAMINO' } }),
-      this.prisma.order.count({ where: { status: 'ENTREGADO' } }),
-      this.prisma.order.count({ where: { status: 'CANCELADO' } }),
-    ]);
+      const [totalUsers, adminUsers, superAdminUsers] = await Promise.all([
+        this.prisma.user.count({ where: { isActive: true } }),
+        this.prisma.user.count({ where: { role: 'ADMIN', isActive: true } }),
+        this.prisma.user.count({
+          where: { role: 'SUPER_ADMIN', isActive: true },
+        }),
+      ]);
 
-    // Calcular ventas totales (solo órdenes con pago confirmado o entregadas)
-    const salesAggregate = await this.prisma.order.aggregate({
-      where: {
-        status: {
-          in: ['PAGO_CONFIRMADO', 'EN_CAMINO', 'ENTREGADO'],
-        },
-      },
-      _sum: {
-        total: true,
-      },
-    });
-
-    const totalSales = salesAggregate._sum.total || 0;
-
-    return {
-      products: {
-        total: totalProducts,
-        active: activeProducts,
-        inactive: totalProducts - activeProducts,
-      },
-      users: {
-        total: totalUsers,
-        admins: adminUsers,
-        superAdmins: superAdminUsers,
-        regular: totalUsers - adminUsers - superAdminUsers,
-      },
-      orders: {
-        total: totalOrders,
+      const [
+        totalOrders,
         pendingPayment,
         confirmedPayment,
         inTransit,
         delivered,
         cancelled,
-      },
-      sales: {
-        total: totalSales,
-      },
-    };
+      ] = await Promise.all([
+        this.prisma.order.count(),
+        this.prisma.order.count({ where: { status: 'PENDING_PAYMENT' } }),
+        this.prisma.order.count({ where: { status: 'PAGO_CONFIRMADO' } }),
+        this.prisma.order.count({ where: { status: 'EN_CAMINO' } }),
+        this.prisma.order.count({ where: { status: 'ENTREGADO' } }),
+        this.prisma.order.count({ where: { status: 'CANCELADO' } }),
+      ]);
+
+      const salesAggregate = await this.prisma.order.aggregate({
+        where: {
+          status: {
+            in: ['PAGO_CONFIRMADO', 'EN_CAMINO', 'ENTREGADO'],
+          },
+        },
+        _sum: {
+          total: true,
+        },
+      });
+
+      const totalSales = salesAggregate._sum.total || 0;
+
+      this.logger.log(
+        `Estadísticas calculadas - Productos: ${totalProducts}, Órdenes: ${totalOrders}, Ventas: €${Number(totalSales)}`,
+      );
+
+      return {
+        products: {
+          total: totalProducts,
+          active: activeProducts,
+          inactive: totalProducts - activeProducts,
+        },
+        users: {
+          total: totalUsers,
+          admins: adminUsers,
+          superAdmins: superAdminUsers,
+          regular: totalUsers - adminUsers - superAdminUsers,
+        },
+        orders: {
+          total: totalOrders,
+          pendingPayment,
+          confirmedPayment,
+          inTransit,
+          delivered,
+          cancelled,
+        },
+        sales: {
+          total: totalSales,
+        },
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        'Error consultando estadísticas del dashboard',
+        err.stack,
+      );
+      throw error;
+    }
   }
 
   /**
    * Obtener órdenes recientes
    */
   async getRecentOrders(limit: number = 10) {
-    const orders = await this.prisma.order.findMany({
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            nickname: true,
-          },
-        },
-        items: {
-          include: {
-            variant: {
-              include: {
-                product: {
-                  select: {
-                    name: true,
-                    slug: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    this.logger.log(`Consultando ${limit} órdenes recientes`);
 
-    return {
-      total: orders.length,
-      orders,
-    };
-  }
-
-  // ==================== GESTIÓN DE ÓRDENES ====================
-
-  /**
-   * Listar todas las órdenes con filtros y paginación
-   */
-  async getAllOrders(queryOrdersDto: QueryOrdersDto) {
-    const { status, page = 1, limit = 10 } = queryOrdersDto;
-
-    const skip = (page - 1) * limit;
-
-    const where = status ? { status } : {};
-
-    const [orders, total] = await Promise.all([
-      this.prisma.order.findMany({
-        where,
-        skip,
+    try {
+      const orders = await this.prisma.order.findMany({
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
@@ -155,7 +120,6 @@ export class AdminService {
               nickname: true,
             },
           },
-          address: true,
           items: {
             include: {
               variant: {
@@ -171,152 +135,270 @@ export class AdminService {
             },
           },
         },
-      }),
-      this.prisma.order.count({ where }),
-    ]);
+      });
 
-    return {
-      orders,
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      this.logger.log(`${orders.length} órdenes recientes obtenidas`);
+
+      return {
+        total: orders.length,
+        orders,
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error consultando órdenes recientes', err.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Listar todas las órdenes con filtros y paginación
+   */
+  async getAllOrders(queryOrdersDto: QueryOrdersDto) {
+    this.logger.log(
+      `Consultando órdenes - Página: ${queryOrdersDto.page || 1}, Estado: ${queryOrdersDto.status || 'todos'}`,
+    );
+
+    try {
+      const { status, page = 1, limit = 10 } = queryOrdersDto;
+
+      const skip = (page - 1) * limit;
+
+      const where = status ? { status } : {};
+
+      const [orders, total] = await Promise.all([
+        this.prisma.order.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+          include: {
+            user: {
+              select: {
+                id: true,
+                email: true,
+                name: true,
+                nickname: true,
+              },
+            },
+            address: true,
+            items: {
+              include: {
+                variant: {
+                  include: {
+                    product: {
+                      select: {
+                        name: true,
+                        slug: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }),
+        this.prisma.order.count({ where }),
+      ]);
+
+      this.logger.log(
+        `${total} órdenes encontradas - Página ${page}/${Math.ceil(total / limit)}`,
+      );
+
+      return {
+        orders,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error consultando órdenes', err.stack);
+      throw error;
+    }
   }
 
   /**
    * Obtener detalle de una orden
    */
   async getOrderById(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            name: true,
-            nickname: true,
-            phone: true,
+    this.logger.log(`Consultando orden ${orderId}`);
+
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              name: true,
+              nickname: true,
+              phone: true,
+            },
           },
-        },
-        address: true,
-        items: {
-          include: {
-            variant: {
-              include: {
-                product: {
-                  select: {
-                    id: true,
-                    name: true,
-                    slug: true,
+          address: true,
+          items: {
+            include: {
+              variant: {
+                include: {
+                  product: {
+                    select: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-    });
+      });
 
-    if (!order) {
-      throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
+      if (!order) {
+        this.logger.warn(`Orden ${orderId} no encontrada`);
+        throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
+      }
+
+      this.logger.log(`Orden ${orderId} consultada exitosamente`);
+
+      return order;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error consultando orden ${orderId}`, err.stack, {
+        orderId,
+      });
+      throw error;
     }
-
-    return order;
   }
 
   /**
    * Aprobar pago de una orden
    */
   async approvePayment(orderId: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
+    this.logger.log(`Aprobando pago de orden ${orderId}`);
 
-    if (!order) {
-      throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
-    }
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+      });
 
-    if (order.status !== 'PENDING_PAYMENT') {
-      throw new BadRequestException(
-        'Solo se pueden aprobar órdenes pendientes de pago',
-      );
-    }
+      if (!order) {
+        this.logger.warn(`Orden ${orderId} no encontrada para aprobar pago`);
+        throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
+      }
 
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: {
-        status: 'PAGO_CONFIRMADO',
-        paidAt: new Date(),
-      },
-      include: {
-        user: {
-          select: {
-            email: true,
-            name: true,
+      if (order.status !== 'PENDING_PAYMENT') {
+        this.logger.warn(
+          `Intento de aprobar pago de orden ${orderId} con estado ${order.status}`,
+        );
+        throw new BadRequestException(
+          'Solo se pueden aprobar órdenes pendientes de pago',
+        );
+      }
+
+      const updatedOrder = await this.prisma.order.update({
+        where: { id: orderId },
+        data: {
+          status: 'PAGO_CONFIRMADO',
+          paidAt: new Date(),
+        },
+        include: {
+          user: {
+            select: {
+              email: true,
+              name: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    return {
-      message: 'Pago aprobado exitosamente',
-      order: updatedOrder,
-    };
+      this.logger.log(`Pago aprobado exitosamente para orden ${orderId}`);
+
+      return {
+        message: 'Pago aprobado exitosamente',
+        order: updatedOrder,
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(`Error aprobando pago de orden ${orderId}`, err.stack, {
+        orderId,
+      });
+      throw error;
+    }
   }
 
   /**
    * Cambiar estado de una orden
    */
   async updateOrderStatus(orderId: string, newStatus: OrderStatus) {
-    const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
-    });
+    this.logger.log(`Actualizando estado de orden ${orderId} a ${newStatus}`);
 
-    if (!order) {
-      throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
-    }
+    try {
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+      });
 
-    // Validar transiciones de estado
-    if (order.status === 'CANCELADO') {
-      throw new BadRequestException(
-        'No se puede modificar una orden cancelada',
+      if (!order) {
+        this.logger.warn(`Orden ${orderId} no encontrada para cambiar estado`);
+        throw new NotFoundException(`Orden con ID ${orderId} no encontrada`);
+      }
+
+      if (order.status === 'CANCELADO') {
+        this.logger.warn(`Intento de modificar orden cancelada ${orderId}`);
+        throw new BadRequestException(
+          'No se puede modificar una orden cancelada',
+        );
+      }
+
+      if (newStatus === 'CANCELADO' && order.status === 'ENTREGADO') {
+        this.logger.warn(`Intento de cancelar orden entregada ${orderId}`);
+        throw new BadRequestException(
+          'No se puede cancelar una orden entregada',
+        );
+      }
+
+      const updateData: {
+        status: OrderStatus;
+        shippedAt?: Date;
+        deliveredAt?: Date;
+        cancelledAt?: Date;
+      } = {
+        status: newStatus,
+      };
+
+      if (newStatus === 'EN_CAMINO') {
+        updateData.shippedAt = new Date();
+      } else if (newStatus === 'ENTREGADO') {
+        updateData.deliveredAt = new Date();
+      } else if (newStatus === 'CANCELADO') {
+        updateData.cancelledAt = new Date();
+      }
+
+      const updatedOrder = await this.prisma.order.update({
+        where: { id: orderId },
+        data: updateData,
+      });
+
+      this.logger.log(
+        `Estado de orden ${orderId} actualizado exitosamente a ${newStatus}`,
       );
+
+      return {
+        message: `Estado de orden actualizado a ${newStatus}`,
+        order: updatedOrder,
+      };
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error actualizando estado de orden ${orderId}`,
+        err.stack,
+        { orderId, newStatus },
+      );
+      throw error;
     }
-
-    if (newStatus === 'CANCELADO' && order.status === 'ENTREGADO') {
-      throw new BadRequestException('No se puede cancelar una orden entregada');
-    }
-
-    const updateData: {
-      status: OrderStatus;
-      shippedAt?: Date;
-      deliveredAt?: Date;
-      cancelledAt?: Date;
-    } = {
-      status: newStatus,
-    };
-
-    // Agregar timestamps según el estado
-    if (newStatus === 'EN_CAMINO') {
-      updateData.shippedAt = new Date();
-    } else if (newStatus === 'ENTREGADO') {
-      updateData.deliveredAt = new Date();
-    } else if (newStatus === 'CANCELADO') {
-      updateData.cancelledAt = new Date();
-    }
-
-    const updatedOrder = await this.prisma.order.update({
-      where: { id: orderId },
-      data: updateData,
-    });
-
-    return {
-      message: `Estado de orden actualizado a ${newStatus}`,
-      order: updatedOrder,
-    };
   }
 }

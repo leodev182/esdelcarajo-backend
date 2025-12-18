@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
@@ -11,6 +11,8 @@ import { UpdateAddressDto } from './dto/update-address.dto';
  */
 @Injectable()
 export class AddressService {
+  private readonly logger = new Logger(AddressService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**
@@ -18,39 +20,62 @@ export class AddressService {
    * Si se marca como predeterminada, desmarca las demás
    */
   async create(userId: string, dto: CreateAddressDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+    this.logger.log(`Usuario ${userId} creando nueva dirección`);
 
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    if (dto.isDefault) {
-      await this.prisma.address.updateMany({
-        where: {
-          userId,
-          isActive: true,
-        },
-        data: {
-          isDefault: false,
-        },
-      });
-    }
-
-    if (!user.phone) {
-      await this.prisma.user.update({
+    try {
+      const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        data: { phone: dto.phone },
       });
-    }
 
-    return this.prisma.address.create({
-      data: {
-        userId,
-        ...dto,
-      },
-    });
+      if (!user) {
+        this.logger.warn(`Usuario ${userId} no encontrado`);
+        throw new NotFoundException('Usuario no encontrado');
+      }
+
+      if (dto.isDefault) {
+        await this.prisma.address.updateMany({
+          where: {
+            userId,
+            isActive: true,
+          },
+          data: {
+            isDefault: false,
+          },
+        });
+        this.logger.log(
+          `Direcciones existentes del usuario ${userId} desmarcadas como predeterminadas`,
+        );
+      }
+
+      if (!user.phone) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { phone: dto.phone },
+        });
+        this.logger.log(`Teléfono actualizado para usuario ${userId}`);
+      }
+
+      const address = await this.prisma.address.create({
+        data: {
+          userId,
+          ...dto,
+        },
+      });
+
+      this.logger.log(
+        `Dirección creada exitosamente - ID: ${address.id}, Usuario: ${userId}`,
+      );
+
+      return address;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error creando dirección para usuario ${userId}`,
+        err.stack,
+        { userId },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -58,16 +83,31 @@ export class AddressService {
    * Ordenadas por: predeterminada primero, luego por fecha de creación
    */
   async findAllByUser(userId: string) {
-    return this.prisma.address.findMany({
-      where: {
-        userId,
-        isActive: true,
-      },
-      orderBy: [
-        { isDefault: 'desc' }, // Predeterminada primero
-        { createdAt: 'desc' }, // Más reciente primero
-      ],
-    });
+    this.logger.log(`Consultando direcciones del usuario ${userId}`);
+
+    try {
+      const addresses = await this.prisma.address.findMany({
+        where: {
+          userId,
+          isActive: true,
+        },
+        orderBy: [{ isDefault: 'desc' }, { createdAt: 'desc' }],
+      });
+
+      this.logger.log(
+        `${addresses.length} direcciones encontradas para usuario ${userId}`,
+      );
+
+      return addresses;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error consultando direcciones del usuario ${userId}`,
+        err.stack,
+        { userId },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -84,6 +124,9 @@ export class AddressService {
     });
 
     if (!address) {
+      this.logger.warn(
+        `Dirección ${addressId} no encontrada para usuario ${userId}`,
+      );
       throw new NotFoundException('Dirección no encontrada');
     }
 
@@ -95,38 +138,57 @@ export class AddressService {
    * Si se marca como predeterminada, desmarca las demás
    */
   async update(addressId: string, userId: string, dto: UpdateAddressDto) {
-    // Verificar que la dirección existe y pertenece al usuario
-    const address = await this.prisma.address.findFirst({
-      where: {
-        id: addressId,
-        userId,
-        isActive: true,
-      },
-    });
+    this.logger.log(`Usuario ${userId} actualizando dirección ${addressId}`);
 
-    if (!address) {
-      throw new NotFoundException('Dirección no encontrada');
-    }
-
-    // Si se marca como predeterminada, desmarcar todas las demás
-    if (dto.isDefault) {
-      await this.prisma.address.updateMany({
+    try {
+      const address = await this.prisma.address.findFirst({
         where: {
+          id: addressId,
           userId,
           isActive: true,
-          id: { not: addressId }, // Excluir la dirección actual
-        },
-        data: {
-          isDefault: false,
         },
       });
-    }
 
-    // Actualizar la dirección
-    return this.prisma.address.update({
-      where: { id: addressId },
-      data: dto,
-    });
+      if (!address) {
+        this.logger.warn(
+          `Dirección ${addressId} no encontrada para usuario ${userId}`,
+        );
+        throw new NotFoundException('Dirección no encontrada');
+      }
+
+      if (dto.isDefault) {
+        await this.prisma.address.updateMany({
+          where: {
+            userId,
+            isActive: true,
+            id: { not: addressId },
+          },
+          data: {
+            isDefault: false,
+          },
+        });
+        this.logger.log(
+          `Otras direcciones desmarcadas como predeterminadas para usuario ${userId}`,
+        );
+      }
+
+      const updated = await this.prisma.address.update({
+        where: { id: addressId },
+        data: dto,
+      });
+
+      this.logger.log(`Dirección ${addressId} actualizada exitosamente`);
+
+      return updated;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error actualizando dirección ${addressId} para usuario ${userId}`,
+        err.stack,
+        { userId, addressId },
+      );
+      throw error;
+    }
   }
 
   /**
@@ -134,35 +196,55 @@ export class AddressService {
    * Desmarca automáticamente las demás
    */
   async setAsDefault(addressId: string, userId: string) {
-    // Verificar que la dirección existe y pertenece al usuario
-    const address = await this.prisma.address.findFirst({
-      where: {
-        id: addressId,
-        userId,
-        isActive: true,
-      },
-    });
+    this.logger.log(
+      `Marcando dirección ${addressId} como predeterminada para usuario ${userId}`,
+    );
 
-    if (!address) {
-      throw new NotFoundException('Dirección no encontrada');
+    try {
+      const address = await this.prisma.address.findFirst({
+        where: {
+          id: addressId,
+          userId,
+          isActive: true,
+        },
+      });
+
+      if (!address) {
+        this.logger.warn(
+          `Dirección ${addressId} no encontrada para usuario ${userId}`,
+        );
+        throw new NotFoundException('Dirección no encontrada');
+      }
+
+      await this.prisma.address.updateMany({
+        where: {
+          userId,
+          isActive: true,
+        },
+        data: {
+          isDefault: false,
+        },
+      });
+
+      const updated = await this.prisma.address.update({
+        where: { id: addressId },
+        data: { isDefault: true },
+      });
+
+      this.logger.log(
+        `Dirección ${addressId} marcada como predeterminada exitosamente`,
+      );
+
+      return updated;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error marcando dirección ${addressId} como predeterminada`,
+        err.stack,
+        { userId, addressId },
+      );
+      throw error;
     }
-
-    // Desmarcar todas las direcciones del usuario
-    await this.prisma.address.updateMany({
-      where: {
-        userId,
-        isActive: true,
-      },
-      data: {
-        isDefault: false,
-      },
-    });
-
-    // Marcar esta dirección como predeterminada
-    return this.prisma.address.update({
-      where: { id: addressId },
-      data: { isDefault: true },
-    });
   }
 
   /**
@@ -170,23 +252,40 @@ export class AddressService {
    * No se puede eliminar si es la única dirección activa
    */
   async remove(addressId: string, userId: string) {
-    // Verificar que la dirección existe y pertenece al usuario
-    const address = await this.prisma.address.findFirst({
-      where: {
-        id: addressId,
-        userId,
-        isActive: true,
-      },
-    });
+    this.logger.log(`Usuario ${userId} eliminando dirección ${addressId}`);
 
-    if (!address) {
-      throw new NotFoundException('Dirección no encontrada');
+    try {
+      const address = await this.prisma.address.findFirst({
+        where: {
+          id: addressId,
+          userId,
+          isActive: true,
+        },
+      });
+
+      if (!address) {
+        this.logger.warn(
+          `Dirección ${addressId} no encontrada para usuario ${userId}`,
+        );
+        throw new NotFoundException('Dirección no encontrada');
+      }
+
+      const deleted = await this.prisma.address.update({
+        where: { id: addressId },
+        data: { isActive: false },
+      });
+
+      this.logger.log(`Dirección ${addressId} eliminada exitosamente`);
+
+      return deleted;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error eliminando dirección ${addressId} para usuario ${userId}`,
+        err.stack,
+        { userId, addressId },
+      );
+      throw error;
     }
-
-    // Soft delete
-    return this.prisma.address.update({
-      where: { id: addressId },
-      data: { isActive: false },
-    });
   }
 }
