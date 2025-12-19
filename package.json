@@ -8,7 +8,7 @@
   "scripts": {
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/src/main.js",
+    "start:prod": "npx prisma migrate deploy && node dist/src/main.js",
     "build": "nest build",
     "prisma:generate": "dotenv -e .env -- prisma generate",
     "prisma:migrate": "dotenv -e .env -- prisma migrate dev",
