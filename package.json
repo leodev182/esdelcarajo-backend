@@ -1,8 +1,8 @@
 {
   "name": "esdelcarajo-backend",
   "version": "0.0.1",
-  "description": "",
-  "author": "",
+  "description": "Backend API for EsDelCarajo e-commerce platform, handling authentication, orders, inventory and admin operations",
+  "author": "Leonardo Duque – Backend Developer (NoneDev)",
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
