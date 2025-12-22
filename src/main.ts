@@ -10,24 +10,38 @@ import helmet from 'helmet';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
-  // Usar Pino como logger global
   app.useLogger(app.get(Logger));
 
-  // CORS con credentials habilitado para cookies
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'https://esdelcarajo-frontend.vercel.app',
+    'https://esdelcarajo.com',
+    'https://www.esdelcarajo.com',
+  ];
+
+  // CORS con múltiples orígenes
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      // Permitir requests sin origin (Postman, mobile apps)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'), false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
-  // Seguridad
   app.use(helmet());
-
-  // Cookies
   app.use(cookieParser());
 
-  // Validación global
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -36,7 +50,6 @@ async function bootstrap() {
     }),
   );
 
-  // Prefijo global
   app.setGlobalPrefix('api');
 
   const port = process.env.PORT || 3001;
