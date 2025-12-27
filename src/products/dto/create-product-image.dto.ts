@@ -7,6 +7,8 @@ import {
   Max,
   IsUrl,
   IsOptional,
+  IsArray,
+  ArrayMinSize,
 } from 'class-validator';
 
 /**
@@ -22,13 +24,18 @@ export class CreateProductImageDto {
   productId: string;
 
   /**
-   * UUID de la variante (opcional)
-   * Si se omite, la imagen es general del producto
-   * @example "550e8400-e29b-41d4-a716-446655440001"
+   * Array de UUIDs de variantes a asociar con esta imagen
+   * Permite asociar una imagen a múltiples variantes (ej: todas las tallas de un mismo color)
+   * @example ["550e8400-e29b-41d4-a716-446655440001", "550e8400-e29b-41d4-a716-446655440002"]
    */
+  @IsArray({ message: 'variantIds debe ser un array' })
+  @ArrayMinSize(1, { message: 'Debe seleccionar al menos una variante' })
+  @IsUUID('4', {
+    each: true,
+    message: 'Cada variantId debe ser un UUID válido',
+  })
   @IsOptional()
-  @IsUUID('4', { message: 'variantId debe ser un UUID válido' })
-  variantId?: string | null;
+  variantIds?: string[];
 
   /**
    * URL de la imagen (Cloudinary)
@@ -48,7 +55,7 @@ export class CreateProductImageDto {
 
   /**
    * Texto alternativo para SEO y accesibilidad
-   * @example "Franela Goyo Classic color negro talla M"
+   * @example "Franela Goyo Classic color negro"
    */
   @IsString({ message: 'alt debe ser un texto' })
   @IsNotEmpty({ message: 'alt es obligatorio' })

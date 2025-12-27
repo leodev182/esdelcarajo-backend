@@ -205,10 +205,24 @@ export class ProductsService {
             variants: {
               where: { isActive: true },
               orderBy: { createdAt: 'asc' },
+              include: {
+                images: {
+                  include: {
+                    image: true,
+                  },
+                },
+              },
             },
             images: {
               where: { isActive: true },
               orderBy: { order: 'asc' },
+              include: {
+                variants: {
+                  include: {
+                    variant: true,
+                  },
+                },
+              },
             },
           },
         }),
@@ -247,10 +261,24 @@ export class ProductsService {
         variants: {
           where: { isActive: true },
           orderBy: { createdAt: 'asc' },
+          include: {
+            images: {
+              include: {
+                image: true,
+              },
+            },
+          },
         },
         images: {
           where: { isActive: true },
           orderBy: { order: 'asc' },
+          include: {
+            variants: {
+              include: {
+                variant: true,
+              },
+            },
+          },
         },
         tags: {
           include: {
@@ -283,10 +311,24 @@ export class ProductsService {
         variants: {
           where: { isActive: true },
           orderBy: { createdAt: 'asc' },
+          include: {
+            images: {
+              include: {
+                image: true,
+              },
+            },
+          },
         },
         images: {
           where: { isActive: true },
           orderBy: { order: 'asc' },
+          include: {
+            variants: {
+              include: {
+                variant: true,
+              },
+            },
+          },
         },
         tags: {
           include: {
@@ -592,7 +634,7 @@ export class ProductsService {
   }
 
   /**
-   * Agrega una imagen a un producto
+   * Agrega una imagen a un producto y la asocia con múltiples variantes
    * Valida que no se excedan 5 imágenes por producto
    */
   async addImage(createImageDto: CreateProductImageDto): Promise<ProductImage> {
@@ -615,27 +657,27 @@ export class ProductsService {
         );
       }
 
-      if (createImageDto.variantId) {
-        const variant = await this.prisma.productVariant.findUnique({
-          where: { id: createImageDto.variantId },
-        });
+      if (createImageDto.variantIds && createImageDto.variantIds.length > 0) {
+        for (const variantId of createImageDto.variantIds) {
+          const variant = await this.prisma.productVariant.findUnique({
+            where: { id: variantId },
+          });
 
-        if (!variant) {
-          this.logger.warn(
-            `Variante ${createImageDto.variantId} no encontrada`,
-          );
-          throw new NotFoundException(
-            `Variante con ID "${createImageDto.variantId}" no encontrada`,
-          );
-        }
+          if (!variant) {
+            this.logger.warn(`Variante ${variantId} no encontrada`);
+            throw new NotFoundException(
+              `Variante con ID "${variantId}" no encontrada`,
+            );
+          }
 
-        if (variant.productId !== createImageDto.productId) {
-          this.logger.warn(
-            `Variante ${createImageDto.variantId} no pertenece a producto ${createImageDto.productId}`,
-          );
-          throw new BadRequestException(
-            'La variante no pertenece al producto especificado',
-          );
+          if (variant.productId !== createImageDto.productId) {
+            this.logger.warn(
+              `Variante ${variantId} no pertenece a producto ${createImageDto.productId}`,
+            );
+            throw new BadRequestException(
+              `La variante ${variantId} no pertenece al producto especificado`,
+            );
+          }
         }
       }
 
@@ -661,12 +703,33 @@ export class ProductsService {
         );
       }
 
+      const { variantIds, ...imageData } = createImageDto;
+
       const image = await this.prisma.productImage.create({
-        data: createImageDto,
+        data: {
+          ...imageData,
+          ...(variantIds &&
+            variantIds.length > 0 && {
+              variants: {
+                create: variantIds.map((variantId) => ({
+                  variant: {
+                    connect: { id: variantId },
+                  },
+                })),
+              },
+            }),
+        },
+        include: {
+          variants: {
+            include: {
+              variant: true,
+            },
+          },
+        },
       });
 
       this.logger.log(
-        `Imagen agregada exitosamente - ID: ${image.id}, Producto: ${createImageDto.productId}`,
+        `Imagen agregada exitosamente - ID: ${image.id}, Producto: ${createImageDto.productId}, Variantes: ${variantIds?.length || 0}`,
       );
 
       return image;

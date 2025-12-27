@@ -83,4 +83,20 @@ export class CreateVariantDto {
   @Min(0, { message: 'El precio no puede ser negativo' })
   @IsNotEmpty({ message: 'El precio es obligatorio' })
   price: number;
+
+  /**
+   * Descripción corta específica de esta variante (max 300 palabras)
+   * @example "Franela Goyo en color Azul, perfecta para el día a día..."
+   */
+  @IsString({ message: 'La descripción corta debe ser un texto' })
+  @IsOptional()
+  shortDescription?: string;
+
+  /**
+   * Características en formato JSON para lista con viñetas
+   * @example '{"material":"100% Algodón Premium","corte":"Regular Fit","cuello":"Redondo"}'
+   */
+  @IsString({ message: 'Las características deben ser un texto' })
+  @IsOptional()
+  features?: string;
 }

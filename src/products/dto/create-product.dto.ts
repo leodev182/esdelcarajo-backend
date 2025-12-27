@@ -29,6 +29,14 @@ export class CreateProductDto {
   description: string;
 
   /**
+   * Descripción larga para SEO (aparece al final de la página)
+   * @example "Historia del diseño, valores de la marca, inspiración artística..."
+   */
+  @IsString({ message: 'La descripción larga debe ser un texto' })
+  @IsOptional()
+  longDescription?: string;
+
+  /**
    * UUID de la categoría
    * @example "1194ebe5-3d97-4c87-98ea-d82c6a740bd3"
    */
