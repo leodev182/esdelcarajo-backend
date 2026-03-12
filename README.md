@@ -1,98 +1,189 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Del Carajo — Backend API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+API REST para la plataforma de e-commerce **Del Carajo**, marca de ropa urbana venezolana. Gestiona autenticación, catálogo de productos, carrito, órdenes, inventario y panel de administración.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+---
 
-## Description
+## Stack tecnológico
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+| Capa | Tecnología |
+|---|---|
+| Framework | NestJS 11 + TypeScript 5 |
+| Base de datos | PostgreSQL (Neon) via Prisma ORM 6 |
+| Autenticación | JWT + Google OAuth 2.0 (Passport) |
+| Almacenamiento | Cloudinary |
+| Emails | Resend |
+| Monitoreo | Sentry |
+| Logging | Pino + pino-pretty |
+| Documentación | Swagger / OpenAPI |
+| Tareas programadas | @nestjs/schedule (CRON) |
+| Rate limiting | @nestjs/throttler |
 
-## Project setup
+---
 
-```bash
-$ npm install
-```
+## Requisitos previos
 
-## Compile and run the project
+- Node.js >= 22
+- npm >= 10
+- Cuenta en [Neon](https://neon.tech) (PostgreSQL serverless) o PostgreSQL local
+- Cuenta en [Cloudinary](https://cloudinary.com) para subida de imágenes
+- Cuenta en [Resend](https://resend.com) para emails transaccionales
+- Credenciales OAuth en [Google Cloud Console](https://console.cloud.google.com)
 
-```bash
-# development
-$ npm run start
+---
 
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+## Instalación
 
 ```bash
-# unit tests
-$ npm run test
+# 1. Instalar dependencias
+npm install
 
-# e2e tests
-$ npm run test:e2e
+# 2. Configurar variables de entorno
+cp .env.example .env
+# Editar .env con tus valores reales
 
-# test coverage
-$ npm run test:cov
+# 3. Generar el cliente Prisma
+npm run prisma:generate
+
+# 4. Aplicar migraciones a la base de datos
+npm run prisma:migrate
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Variables de entorno
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Crear un archivo `.env` en la raíz con los siguientes valores:
+
+```env
+# Servidor
+PORT=3001
+NODE_ENV=development
+
+# Base de datos
+DATABASE_URL=postgresql://usuario:password@host/db?sslmode=require
+
+# Autenticación JWT
+JWT_SECRET=tu_jwt_secret_muy_seguro
+
+# Google OAuth
+GOOGLE_CLIENT_ID=tu_google_client_id
+GOOGLE_CLIENT_SECRET=tu_google_client_secret
+GOOGLE_CALLBACK_URL=http://localhost:3001/api/auth/google/callback
+
+# URL del frontend (para redirecciones OAuth)
+FRONTEND_URL=http://localhost:3000
+
+# Cloudinary (subida de imágenes)
+CLOUDINARY_CLOUD_NAME=tu_cloud_name
+CLOUDINARY_API_KEY=tu_api_key
+CLOUDINARY_API_SECRET=tu_api_secret
+
+# Resend (emails transaccionales)
+RESEND_API_KEY=re_xxxxxxxxxxxx
+
+# Sentry (monitoreo, activo solo en producción)
+SENTRY_DSN=https://xxxx@sentry.io/xxxx
+```
+
+---
+
+## Base de datos
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Crear y aplicar nueva migración (desarrollo)
+npm run prisma:migrate
+
+# Abrir Prisma Studio — explorador visual de la DB
+npm run prisma:studio
+
+# Regenerar cliente Prisma tras cambios en el schema
+npm run prisma:generate
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Modelos principales:** `User`, `Product`, `ProductVariant`, `ProductImage`, `Category`, `Subcategory`, `Cart`, `CartItem`, `Order`, `OrderItem`, `Favorite`, `Address`, `ExchangeRate`, `LandingSection`
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Levantar el proyecto
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# Desarrollo con hot reload
+npm run start:dev
 
-## Support
+# Producción (incluye migración automática)
+npm run build
+npm run start:prod
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Servidor disponible en `http://localhost:3001`
 
-## Stay in touch
+---
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## Scripts disponibles
 
-## License
+| Script | Descripción |
+|---|---|
+| `npm run start:dev` | Desarrollo con hot reload |
+| `npm run build` | Compilar TypeScript a `/dist` |
+| `npm run start:prod` | Migrar DB y levantar servidor compilado |
+| `npm run prisma:migrate` | Crear y aplicar nueva migración |
+| `npm run prisma:generate` | Regenerar cliente Prisma |
+| `npm run prisma:studio` | Abrir Prisma Studio en el navegador |
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+---
+
+## Documentación API
+
+Con el servidor corriendo, la documentación Swagger está disponible en:
+
+```
+http://localhost:3001/api/docs
+```
+
+---
+
+## Estructura del proyecto
+
+```
+src/
+├── auth/          # JWT, Google OAuth, guards, estrategias
+├── users/         # Gestión de usuarios y roles
+├── products/      # Catálogo, variantes, imágenes
+├── categories/    # Categorías y subcategorías
+├── cart/          # Carrito con expiración TTL automática
+├── orders/        # Órdenes, estados y comprobantes de pago
+├── favorites/     # Favoritos por usuario
+├── address/       # Direcciones de entrega
+├── admin/         # Panel de administración
+├── landing/       # Secciones configurables del landing
+├── bcv/           # Tasas de cambio BCV (scraping + CRON diario)
+├── upload/        # Subida de imágenes a Cloudinary
+├── mail/          # Emails transaccionales via Resend
+├── prisma/        # Servicio de base de datos
+├── common/        # Pipes, filtros, interceptors y decorators globales
+├── config/        # Configuración de la aplicación
+├── app.module.ts
+└── main.ts
+prisma/
+└── schema.prisma  # Schema de la base de datos
+```
+
+---
+
+## Endpoints principales
+
+| Módulo | Ruta base | Acceso |
+|---|---|---|
+| Auth | `POST /api/auth/login` | Público |
+| Auth Google | `GET /api/auth/google` | Público |
+| Products | `GET /api/products` | Público |
+| Categories | `GET /api/categories` | Público |
+| BCV | `GET /api/bcv/rate` | Público |
+| Cart | `GET /api/cart` | Autenticado |
+| Orders | `GET /api/orders` | Autenticado |
+| Favorites | `GET /api/favorites` | Autenticado |
+| Address | `GET /api/address` | Autenticado |
+| Admin | `GET /api/admin/*` | ADMIN / SUPER_ADMIN |
+| Upload | `POST /api/upload` | ADMIN / SUPER_ADMIN |
+| Landing | `GET /api/landing/sections` | Público (escritura: Admin) |
