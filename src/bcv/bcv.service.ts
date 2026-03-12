@@ -140,7 +140,8 @@ export class BcvService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const rate = await this.prisma.exchangeRate.findFirst({
+    // 1. Buscar la tasa de hoy
+    const todayRate = await this.prisma.exchangeRate.findFirst({
       where: {
         fromCurrency: 'EUR',
         toCurrency: 'VES',
@@ -151,32 +152,58 @@ export class BcvService {
       },
     });
 
-    if (!rate) {
-      this.logger.warn('No hay tasa para hoy, ejecutando actualización manual');
-      await this.updateExchangeRates();
-
-      const newRate = await this.prisma.exchangeRate.findFirst({
-        where: {
-          fromCurrency: 'EUR',
-          toCurrency: 'VES',
-          valueDate: today,
-        },
-      });
-
-      if (!newRate) {
-        throw new Error('No se pudo obtener la tasa del BCV');
-      }
-
+    if (todayRate) {
       return {
-        rate: Number(newRate.rate),
-        lastUpdate: newRate.updatedAt,
+        rate: Number(todayRate.rate),
+        lastUpdate: todayRate.updatedAt,
         source: 'Banco Central de Venezuela',
       };
     }
 
+    // 2. No hay tasa de hoy: intentar scraping
+    this.logger.warn('No hay tasa para hoy, ejecutando actualización manual');
+    await this.updateExchangeRates();
+
+    // 3. Volver a buscar la tasa de hoy (puede haber sido guardada por el scraping)
+    const newTodayRate = await this.prisma.exchangeRate.findFirst({
+      where: {
+        fromCurrency: 'EUR',
+        toCurrency: 'VES',
+        valueDate: today,
+      },
+    });
+
+    if (newTodayRate) {
+      return {
+        rate: Number(newTodayRate.rate),
+        lastUpdate: newTodayRate.updatedAt,
+        source: 'Banco Central de Venezuela',
+      };
+    }
+
+    // 4. Scraping falló: usar la tasa más reciente disponible en DB como fallback
+    this.logger.warn(
+      'Scraping BCV falló, usando la última tasa disponible como fallback',
+    );
+    const latestRate = await this.prisma.exchangeRate.findFirst({
+      where: {
+        fromCurrency: 'EUR',
+        toCurrency: 'VES',
+      },
+      orderBy: {
+        valueDate: 'desc',
+      },
+    });
+
+    if (!latestRate) {
+      throw new Error(
+        'No hay tasas de cambio disponibles en la base de datos',
+      );
+    }
+
     return {
-      rate: Number(rate.rate),
-      lastUpdate: rate.updatedAt,
+      rate: Number(latestRate.rate),
+      lastUpdate: latestRate.updatedAt,
       source: 'Banco Central de Venezuela',
     };
   }
