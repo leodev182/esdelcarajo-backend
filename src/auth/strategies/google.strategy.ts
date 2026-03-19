@@ -2,8 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MailService } from '../../mail/mail.service';
+import { UserRegisteredEvent } from '../../events/auth.events';
 import { Role } from '@prisma/client';
 
 /**
@@ -45,6 +47,7 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     private configService: ConfigService,
     private prisma: PrismaService,
     private mailService: MailService,
+    private eventEmitter: EventEmitter2,
   ) {
     super({
       clientID: process.env.GOOGLE_CLIENT_ID,
@@ -120,6 +123,11 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
         await this.mailService.sendWelcomeEmail(
           user.email,
           user.name || 'Cliente',
+        );
+
+        this.eventEmitter.emit(
+          UserRegisteredEvent.EVENT,
+          new UserRegisteredEvent(user.id, user.email, user.role),
         );
       } else {
         const updateData: {

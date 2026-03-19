@@ -1,9 +1,11 @@
 import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginResponseDto } from './dto/login-response.dto';
+import { UserLoginEvent } from '../events/auth.events';
 import { randomBytes } from 'crypto';
 
 /**
@@ -22,6 +24,7 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
     private configService: ConfigService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -49,6 +52,11 @@ export class AuthService {
 
       this.logger.log(
         `Tokens generados exitosamente para ${user.email} - Rol: ${user.role}`,
+      );
+
+      this.eventEmitter.emit(
+        UserLoginEvent.EVENT,
+        new UserLoginEvent(user.id, user.email, user.role),
       );
 
       return {

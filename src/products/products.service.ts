@@ -5,7 +5,13 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  ProductCreatedEvent,
+  ProductUpdatedEvent,
+  ProductDeletedEvent,
+} from '../events/product.events';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
@@ -18,7 +24,10 @@ import { Product, ProductVariant, ProductImage } from '@prisma/client';
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   /**
    * Genera un slug amigable para URLs a partir de un nombre
@@ -103,6 +112,11 @@ export class ProductsService {
 
       this.logger.log(
         `Producto creado exitosamente - ID: ${product.id}, Slug: ${slug}`,
+      );
+
+      this.eventEmitter.emit(
+        ProductCreatedEvent.EVENT,
+        new ProductCreatedEvent(product.id, product.name),
       );
 
       return product;
@@ -422,6 +436,11 @@ export class ProductsService {
 
       this.logger.log(`Producto ${id} actualizado exitosamente`);
 
+      this.eventEmitter.emit(
+        ProductUpdatedEvent.EVENT,
+        new ProductUpdatedEvent(product.id, product.name),
+      );
+
       return product;
     } catch (error) {
       const err = error instanceof Error ? error : new Error('Unknown error');
@@ -445,6 +464,11 @@ export class ProductsService {
       });
 
       this.logger.log(`Producto ${id} desactivado exitosamente`);
+
+      this.eventEmitter.emit(
+        ProductDeletedEvent.EVENT,
+        new ProductDeletedEvent(product.id, product.name),
+      );
 
       return product;
     } catch (error) {

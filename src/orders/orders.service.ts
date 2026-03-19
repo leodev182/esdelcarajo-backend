@@ -5,8 +5,10 @@ import {
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { OrderCreatedEvent, OrderStatusUpdatedEvent } from '../events/order.events';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
@@ -19,6 +21,7 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -133,6 +136,11 @@ export class OrdersService {
 
       this.logger.log(
         `Orden ${order.id} creada exitosamente - Total: $${total} - Items: ${cart.items.length}`,
+      );
+
+      this.eventEmitter.emit(
+        OrderCreatedEvent.EVENT,
+        new OrderCreatedEvent(order.id, userId, total),
       );
 
       for (const item of cart.items) {
@@ -386,6 +394,11 @@ export class OrdersService {
 
       this.logger.log(
         `Orden ${orderId} actualizada exitosamente a estado ${dto.status}`,
+      );
+
+      this.eventEmitter.emit(
+        OrderStatusUpdatedEvent.EVENT,
+        new OrderStatusUpdatedEvent(orderId, order.status, dto.status),
       );
 
       if (

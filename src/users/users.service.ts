@@ -1,13 +1,22 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import {
+  UserBannedEvent,
+  UserUnbannedEvent,
+  UserRoleChangedEvent,
+} from '../events/user.events';
 
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   /**
    * Listar todos los usuarios
@@ -144,6 +153,16 @@ export class UsersService {
         `Rol de usuario ${userId} actualizado a ${updateUserRoleDto.role}`,
       );
 
+      this.eventEmitter.emit(
+        UserRoleChangedEvent.EVENT,
+        new UserRoleChangedEvent(
+          userId,
+          updatedUser.email,
+          user.role,
+          updateUserRoleDto.role,
+        ),
+      );
+
       return {
         message: 'Rol de usuario actualizado exitosamente',
         user: updatedUser,
@@ -190,6 +209,18 @@ export class UsersService {
       this.logger.log(
         `Usuario ${userId} ${newStatus ? 'desbaneado' : 'baneado'} exitosamente`,
       );
+
+      if (newStatus) {
+        this.eventEmitter.emit(
+          UserUnbannedEvent.EVENT,
+          new UserUnbannedEvent(userId, updatedUser.email),
+        );
+      } else {
+        this.eventEmitter.emit(
+          UserBannedEvent.EVENT,
+          new UserBannedEvent(userId, updatedUser.email),
+        );
+      }
 
       return {
         message: updatedUser.isActive
