@@ -452,3 +452,69 @@ model SectionImage {
   @@index([sectionId])
   @@index([order])
 }
+
+// ─────────────────────────────────────────────
+// Logs del sistema
+// ─────────────────────────────────────────────
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum LogEvent {
+  // Auth
+  USER_LOGIN
+  USER_LOGOUT
+  USER_REGISTERED
+  // Usuarios
+  USER_BANNED
+  USER_UNBANNED
+  USER_ROLE_CHANGED
+  // Órdenes
+  ORDER_CREATED
+  ORDER_STATUS_UPDATED
+  ORDER_CANCELLED
+  ORDER_PAYMENT_CONFIRMED
+  // Productos
+  PRODUCT_CREATED
+  PRODUCT_UPDATED
+  PRODUCT_DELETED
+  // Sistema
+  UNHANDLED_EXCEPTION
+  CUSTOM_EVENT
+}
+
+model Log {
+  id           String    @id @default(uuid())
+  level        LogLevel
+  event        LogEvent
+  message      String    @db.Text
+
+  // Contexto HTTP (opcional — llenado por AllExceptionsFilter)
+  method       String?
+  url          String?
+  statusCode   Int?
+
+  // Actor
+  userId       String?
+  userEmail    String?
+
+  // Error (solo el mensaje, sin stackTrace — eso va a archivos)
+  errorMessage String?   @db.Text
+
+  // Contexto corto del servicio/evento: "OrdersService.create | orderId:abc"
+  context      String?
+
+  // Ciclo de vida
+  isPermanent  Boolean   @default(false)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  // Índices para queries reales
+  @@index([createdAt])
+  @@index([level, createdAt])
+  @@index([isPermanent, expiresAt])
+  @@index([userId])
+}

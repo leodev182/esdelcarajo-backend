@@ -1,9 +1,12 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { SentryModule } from '@sentry/nestjs/setup';
 import { LoggerModule } from 'nestjs-pino';
+import { Request, Response, NextFunction } from 'express';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -20,6 +23,8 @@ import { AddressModule } from './address/address.module';
 import { BcvModule } from './bcv/bcv.module';
 import { MailModule } from './mail/mail.module';
 import { LandingModule } from './landing/landing.module';
+import { LogsModule } from './logs/logs.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 @Module({
   imports: [
@@ -59,6 +64,7 @@ import { LandingModule } from './landing/landing.module';
         },
       },
     }),
+    EventEmitterModule.forRoot(),
     SentryModule.forRoot(),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
@@ -68,6 +74,7 @@ import { LandingModule } from './landing/landing.module';
       },
     ]),
     PrismaModule,
+    LogsModule,
     AuthModule,
     UsersModule,
     ProductsModule,
@@ -83,6 +90,26 @@ import { LandingModule } from './landing/landing.module';
     LandingModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    // Filtro global con DI — captura todas las excepciones y las loguea
+    {
+      provide: APP_FILTER,
+      useClass: AllExceptionsFilter,
+    },
+  ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  /**
+   * Middleware para marcar el timestamp de inicio de cada request.
+   * Usado por AllExceptionsFilter para calcular la duración.
+   */
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply((req: Request, _res: Response, next: NextFunction) => {
+        (req as Request & { _startTime: number })._startTime = Date.now();
+        next();
+      })
+      .forRoutes('*');
+  }
+}
