@@ -33,12 +33,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       jwtFromRequest: ExtractJwt.fromExtractors([
         (req: Request) => req?.cookies?.access_token ?? null,
       ]),
-      passReqToCallback: true,
-
-      // Si el token expiró, lanzar error automáticamente
       ignoreExpiration: false,
-
-      // Secret para verificar la firma del token
       secretOrKey: process.env.JWT_SECRET,
     });
   }
