@@ -35,7 +35,7 @@ export class CreateVariantDto {
    * Talla de la variante
    * @example "M"
    */
-  @IsEnum(Size, { message: 'size debe ser S, M, L o XL' })
+  @IsEnum(Size, { message: 'size debe ser S, M, L, XL, XXL o XXXL' })
   @IsNotEmpty({ message: 'size es obligatorio' })
   size: Size;
 

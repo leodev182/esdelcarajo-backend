@@ -15,7 +15,7 @@ const mockPrisma = {
 
 const mockTodayRate = {
   id: 'rate-1',
-  fromCurrency: 'EUR',
+  fromCurrency: 'USD',
   toCurrency: 'VES',
   rate: 52.3,
   valueDate: new Date(),
@@ -106,11 +106,10 @@ describe('BcvService', () => {
   });
 
   describe('updateExchangeRates', () => {
-    it('guarda las 4 tasas de cambio cuando el scraping es exitoso', async () => {
+    it('guarda las 2 tasas de cambio cuando el scraping es exitoso', async () => {
       mockedAxios.get.mockResolvedValueOnce({
         data: `
           <html>
-            <div id="euro"><strong>57,24</strong></div>
             <div id="dolar"><strong>52,30</strong></div>
           </html>
         `,
@@ -120,8 +119,8 @@ describe('BcvService', () => {
 
       await service.updateExchangeRates();
 
-      // EUR/VES, VES/EUR, USD/VES, VES/USD
-      expect(mockPrisma.exchangeRate.upsert).toHaveBeenCalledTimes(4);
+      // USD/VES, VES/USD
+      expect(mockPrisma.exchangeRate.upsert).toHaveBeenCalledTimes(2);
     });
 
     it('no lanza excepción cuando el scraping falla (solo loggea el error)', async () => {

@@ -12,11 +12,11 @@ export class BcvService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron('0 5 * * *', {
-    timeZone: 'America/Caracas',
-  })
+  @Cron('0 5 * * *', { timeZone: 'America/Caracas', name: 'bcv-morning' })
+  @Cron('0 15 * * *', { timeZone: 'America/Caracas', name: 'bcv-afternoon' })
+  @Cron('0 19 * * *', { timeZone: 'America/Caracas', name: 'bcv-evening' })
   async updateExchangeRates() {
-    this.logger.log('Iniciando actualización de tasas BCV (CRON 5am)');
+    this.logger.log('Iniciando actualización de tasas BCV');
 
     try {
       const agent = new https.Agent({
@@ -26,71 +26,44 @@ export class BcvService {
       const response = await axios.get('https://www.bcv.org.ve', {
         httpsAgent: agent,
         timeout: 30000,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'es-VE,es;q=0.9',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        },
       });
 
       const html = response.data;
       const $ = load(html);
 
-      const euroText = $('#euro strong').text().trim();
-      const usdText = $('#dolar strong').text().trim();
+      let usdText = '';
 
-      if (!euroText || !usdText) {
-        throw new Error(
-          'No se encontraron los elementos #euro o #dolar strong',
-        );
+      $('.recuadrotsmc').each((_, el) => {
+        const blockText = $(el).text();
+        if (blockText.includes('USD')) {
+          usdText = $(el).find('strong').text().trim();
+        }
+      });
+
+      if (!usdText) {
+        usdText = $('#dolar strong').text().trim();
       }
 
-      const eurRate = parseFloat(euroText.replace(',', '.'));
+      if (!usdText) {
+        throw new Error('No se encontró la tasa USD en el HTML del BCV');
+      }
+
       const usdRate = parseFloat(usdText.replace(',', '.'));
-
-      if (isNaN(eurRate) || eurRate <= 0) {
-        throw new Error(`Tasa EUR inválida: ${euroText}`);
-      }
 
       if (isNaN(usdRate) || usdRate <= 0) {
         throw new Error(`Tasa USD inválida: ${usdText}`);
       }
 
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setUTCHours(0, 0, 0, 0);
 
-      // Guardar EUR -> VES
-      await this.prisma.exchangeRate.upsert({
-        where: {
-          fromCurrency_toCurrency_valueDate: {
-            fromCurrency: 'EUR',
-            toCurrency: 'VES',
-            valueDate: today,
-          },
-        },
-        update: { rate: eurRate },
-        create: {
-          fromCurrency: 'EUR',
-          toCurrency: 'VES',
-          rate: eurRate,
-          valueDate: today,
-        },
-      });
-
-      // Guardar VES -> EUR
-      await this.prisma.exchangeRate.upsert({
-        where: {
-          fromCurrency_toCurrency_valueDate: {
-            fromCurrency: 'VES',
-            toCurrency: 'EUR',
-            valueDate: today,
-          },
-        },
-        update: { rate: 1 / eurRate },
-        create: {
-          fromCurrency: 'VES',
-          toCurrency: 'EUR',
-          rate: 1 / eurRate,
-          valueDate: today,
-        },
-      });
-
-      // Guardar USD -> VES
       await this.prisma.exchangeRate.upsert({
         where: {
           fromCurrency_toCurrency_valueDate: {
@@ -108,7 +81,6 @@ export class BcvService {
         },
       });
 
-      // Guardar VES -> USD
       await this.prisma.exchangeRate.upsert({
         where: {
           fromCurrency_toCurrency_valueDate: {
@@ -126,9 +98,7 @@ export class BcvService {
         },
       });
 
-      this.logger.log(
-        `Tasas actualizadas: EUR=${eurRate} Bs, USD=${usdRate} Bs`,
-      );
+      this.logger.log(`Tasas actualizadas: USD=${usdRate} Bs`);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Error desconocido';
@@ -138,12 +108,12 @@ export class BcvService {
 
   async getBcvRate(): Promise<BcvRateDto> {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     // 1. Buscar la tasa de hoy
     const todayRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
         valueDate: today,
       },
@@ -167,7 +137,7 @@ export class BcvService {
     // 3. Volver a buscar la tasa de hoy (puede haber sido guardada por el scraping)
     const newTodayRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
         valueDate: today,
       },
@@ -187,7 +157,7 @@ export class BcvService {
     );
     const latestRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
       },
       orderBy: {

@@ -34,21 +34,23 @@ export class AdminService {
         }),
       ]);
 
-      const [
-        totalOrders,
-        pendingPayment,
-        confirmedPayment,
-        inTransit,
-        delivered,
-        cancelled,
-      ] = await Promise.all([
-        this.prisma.order.count(),
-        this.prisma.order.count({ where: { status: 'PENDING_PAYMENT' } }),
-        this.prisma.order.count({ where: { status: 'PAGO_CONFIRMADO' } }),
-        this.prisma.order.count({ where: { status: 'EN_CAMINO' } }),
-        this.prisma.order.count({ where: { status: 'ENTREGADO' } }),
-        this.prisma.order.count({ where: { status: 'CANCELADO' } }),
-      ]);
+      const orderCountsByStatus = await this.prisma.order.groupBy({
+        by: ['status'],
+        _count: { id: true },
+      });
+
+      const countByStatus = (status: string): number =>
+        orderCountsByStatus.find((r) => r.status === status)?._count.id ?? 0;
+
+      const pendingPayment = countByStatus('PENDING_PAYMENT');
+      const confirmedPayment = countByStatus('PAGO_CONFIRMADO');
+      const inTransit = countByStatus('EN_CAMINO');
+      const delivered = countByStatus('ENTREGADO');
+      const cancelled = countByStatus('CANCELADO');
+      const totalOrders = orderCountsByStatus.reduce(
+        (sum, r) => sum + r._count.id,
+        0,
+      );
 
       const salesAggregate = await this.prisma.order.aggregate({
         where: {
