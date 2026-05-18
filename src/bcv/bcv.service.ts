@@ -12,11 +12,11 @@ export class BcvService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron('0 5 * * *', {
-    timeZone: 'America/Caracas',
-  })
+  @Cron('0 5 * * *', { timeZone: 'America/Caracas', name: 'bcv-morning' })
+  @Cron('0 15 * * *', { timeZone: 'America/Caracas', name: 'bcv-afternoon' })
+  @Cron('0 19 * * *', { timeZone: 'America/Caracas', name: 'bcv-evening' })
   async updateExchangeRates() {
-    this.logger.log('Iniciando actualización de tasas BCV (CRON 5am)');
+    this.logger.log('Iniciando actualización de tasas BCV');
 
     try {
       const agent = new https.Agent({
@@ -26,6 +26,13 @@ export class BcvService {
       const response = await axios.get('https://www.bcv.org.ve', {
         httpsAgent: agent,
         timeout: 30000,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept-Language': 'es-VE,es;q=0.9',
+          Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        },
       });
 
       const html = response.data;
