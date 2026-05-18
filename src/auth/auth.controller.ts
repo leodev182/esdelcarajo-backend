@@ -38,12 +38,12 @@ export class AuthController {
     const user = req.user;
     const loginResponse = await this.authService.login(user);
 
-    // Guardar refresh_token en HttpOnly Cookie (seguro, no accesible por JavaScript)
+    const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('refresh_token', loginResponse.refresh_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth',
     });
 
@@ -75,12 +75,12 @@ export class AuthController {
     const loginResponse =
       await this.authService.refreshAccessToken(refreshToken);
 
-    // Actualizar cookie con el nuevo refresh_token
+    const isProduction = process.env.NODE_ENV === 'production';
     const res = req.res as Response;
     res.cookie('refresh_token', loginResponse.refresh_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/api/auth',
     });
@@ -102,10 +102,11 @@ export class AuthController {
     }
 
     // Eliminar cookie
+    const isProduction = process.env.NODE_ENV === 'production';
     res.clearCookie('refresh_token', {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax',
       path: '/api/auth',
     });
 
