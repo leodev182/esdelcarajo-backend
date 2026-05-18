@@ -38,10 +38,21 @@ export class BcvService {
       const html = response.data;
       const $ = load(html);
 
-      const usdText = $('#dolar strong').text().trim();
+      let usdText = '';
+
+      $('.recuadrotsmc').each((_, el) => {
+        const blockText = $(el).text();
+        if (blockText.includes('USD')) {
+          usdText = $(el).find('strong').text().trim();
+        }
+      });
 
       if (!usdText) {
-        throw new Error('No se encontró el elemento #dolar strong');
+        usdText = $('#dolar strong').text().trim();
+      }
+
+      if (!usdText) {
+        throw new Error('No se encontró la tasa USD en el HTML del BCV');
       }
 
       const usdRate = parseFloat(usdText.replace(',', '.'));
@@ -51,7 +62,7 @@ export class BcvService {
       }
 
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setUTCHours(0, 0, 0, 0);
 
       await this.prisma.exchangeRate.upsert({
         where: {
@@ -97,7 +108,7 @@ export class BcvService {
 
   async getBcvRate(): Promise<BcvRateDto> {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     // 1. Buscar la tasa de hoy
     const todayRate = await this.prisma.exchangeRate.findFirst({

@@ -1,4 +1,11 @@
-import { Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Headers,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { BcvService } from './bcv.service';
 import { BcvRateDto } from './dto/bcv-rate.dto';
@@ -36,6 +43,20 @@ export class BcvController {
   @ApiOperation({ summary: 'Forzar actualización de tasa BCV (Solo SUPER_ADMIN)' })
   @ApiResponse({ status: 200, description: 'Tasa actualizada exitosamente' })
   async forceRefresh(): Promise<BcvRateDto> {
+    await this.bcvService.updateExchangeRates();
+    return this.bcvService.getBcvRate();
+  }
+
+  @Post('force-update')
+  @ApiOperation({ summary: 'Forzar actualización de tasa BCV con clave secreta' })
+  @ApiResponse({ status: 200, description: 'Tasa actualizada exitosamente' })
+  async forceUpdate(
+    @Headers('x-bcv-secret') secret: string,
+  ): Promise<BcvRateDto> {
+    const expected = process.env.BCV_REFRESH_SECRET;
+    if (!expected || secret !== expected) {
+      throw new UnauthorizedException('Clave inválida');
+    }
     await this.bcvService.updateExchangeRates();
     return this.bcvService.getBcvRate();
   }
