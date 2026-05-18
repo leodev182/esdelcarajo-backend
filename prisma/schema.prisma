@@ -30,6 +30,8 @@ enum Size {
   M
   L
   XL
+  XXL
+  XXXL
 }
 
 enum OrderStatus {
