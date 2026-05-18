@@ -31,21 +31,13 @@ export class BcvService {
       const html = response.data;
       const $ = load(html);
 
-      const euroText = $('#euro strong').text().trim();
       const usdText = $('#dolar strong').text().trim();
 
-      if (!euroText || !usdText) {
-        throw new Error(
-          'No se encontraron los elementos #euro o #dolar strong',
-        );
+      if (!usdText) {
+        throw new Error('No se encontró el elemento #dolar strong');
       }
 
-      const eurRate = parseFloat(euroText.replace(',', '.'));
       const usdRate = parseFloat(usdText.replace(',', '.'));
-
-      if (isNaN(eurRate) || eurRate <= 0) {
-        throw new Error(`Tasa EUR inválida: ${euroText}`);
-      }
 
       if (isNaN(usdRate) || usdRate <= 0) {
         throw new Error(`Tasa USD inválida: ${usdText}`);
@@ -54,43 +46,6 @@ export class BcvService {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // Guardar EUR -> VES
-      await this.prisma.exchangeRate.upsert({
-        where: {
-          fromCurrency_toCurrency_valueDate: {
-            fromCurrency: 'EUR',
-            toCurrency: 'VES',
-            valueDate: today,
-          },
-        },
-        update: { rate: eurRate },
-        create: {
-          fromCurrency: 'EUR',
-          toCurrency: 'VES',
-          rate: eurRate,
-          valueDate: today,
-        },
-      });
-
-      // Guardar VES -> EUR
-      await this.prisma.exchangeRate.upsert({
-        where: {
-          fromCurrency_toCurrency_valueDate: {
-            fromCurrency: 'VES',
-            toCurrency: 'EUR',
-            valueDate: today,
-          },
-        },
-        update: { rate: 1 / eurRate },
-        create: {
-          fromCurrency: 'VES',
-          toCurrency: 'EUR',
-          rate: 1 / eurRate,
-          valueDate: today,
-        },
-      });
-
-      // Guardar USD -> VES
       await this.prisma.exchangeRate.upsert({
         where: {
           fromCurrency_toCurrency_valueDate: {
@@ -108,7 +63,6 @@ export class BcvService {
         },
       });
 
-      // Guardar VES -> USD
       await this.prisma.exchangeRate.upsert({
         where: {
           fromCurrency_toCurrency_valueDate: {
@@ -126,9 +80,7 @@ export class BcvService {
         },
       });
 
-      this.logger.log(
-        `Tasas actualizadas: EUR=${eurRate} Bs, USD=${usdRate} Bs`,
-      );
+      this.logger.log(`Tasas actualizadas: USD=${usdRate} Bs`);
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Error desconocido';
@@ -143,7 +95,7 @@ export class BcvService {
     // 1. Buscar la tasa de hoy
     const todayRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
         valueDate: today,
       },
@@ -167,7 +119,7 @@ export class BcvService {
     // 3. Volver a buscar la tasa de hoy (puede haber sido guardada por el scraping)
     const newTodayRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
         valueDate: today,
       },
@@ -187,7 +139,7 @@ export class BcvService {
     );
     const latestRate = await this.prisma.exchangeRate.findFirst({
       where: {
-        fromCurrency: 'EUR',
+        fromCurrency: 'USD',
         toCurrency: 'VES',
       },
       orderBy: {
