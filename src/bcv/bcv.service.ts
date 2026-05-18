@@ -62,7 +62,7 @@ export class BcvService {
       }
 
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      today.setUTCHours(0, 0, 0, 0);
 
       await this.prisma.exchangeRate.upsert({
         where: {
@@ -108,7 +108,7 @@ export class BcvService {
 
   async getBcvRate(): Promise<BcvRateDto> {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     // 1. Buscar la tasa de hoy
     const todayRate = await this.prisma.exchangeRate.findFirst({
