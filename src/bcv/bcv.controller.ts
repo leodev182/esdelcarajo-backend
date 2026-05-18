@@ -10,7 +10,7 @@ export class BcvController {
 
   @Get('rate')
   @ApiOperation({
-    summary: 'Obtener tasa de cambio BCV (EUR a VES)',
+    summary: 'Obtener tasa de cambio BCV (USD a VES)',
     description:
       'Retorna la tasa de cambio actual del Banco Central de Venezuela. Cachea el resultado por 1 hora.',
   })
