@@ -368,8 +368,12 @@ export class OrdersService {
           updateData.deliveredAt = now;
           break;
         case OrderStatus.CANCELADO:
+        case OrderStatus.ANULADA:
           updateData.cancelledAt = now;
-          if (order.status !== OrderStatus.CANCELADO) {
+          if (
+            order.status !== OrderStatus.CANCELADO &&
+            order.status !== OrderStatus.ANULADA
+          ) {
             const orderWithItems = await this.prisma.order.findUnique({
               where: { id: orderId },
               include: { items: true },
