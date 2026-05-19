@@ -55,6 +55,10 @@ export class CreateVariantDto {
   @IsOptional()
   colorHex?: string;
 
+  @IsString({ message: 'El color de franela debe ser un texto' })
+  @IsOptional()
+  shirtColor?: string;
+
   /**
    * SKU único de la variante
    * @example "GOYO-MEN-M-NEG"
