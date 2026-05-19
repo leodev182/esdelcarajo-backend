@@ -198,8 +198,9 @@ model ProductVariant {
 
   gender   Gender
   size     Size
-  color    String
-  colorHex String?
+  color     String
+  colorHex  String?
+  shirtColor String?
 
   sku   String  @unique
   stock Int     @default(0)
