@@ -11,6 +11,7 @@ import { MailService } from '../mail/mail.service';
 import { OrderCreatedEvent, OrderStatusUpdatedEvent } from '../events/order.events';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrderStatus, Role } from '@prisma/client';
 
@@ -368,6 +369,26 @@ export class OrdersService {
           break;
         case OrderStatus.CANCELADO:
           updateData.cancelledAt = now;
+          if (order.status !== OrderStatus.CANCELADO) {
+            const orderWithItems = await this.prisma.order.findUnique({
+              where: { id: orderId },
+              include: { items: true },
+            });
+            if (orderWithItems) {
+              for (const item of orderWithItems.items) {
+                await this.prisma.productVariant.update({
+                  where: { id: item.variantId },
+                  data: {
+                    stock: { increment: item.quantity },
+                    isActive: true,
+                  },
+                });
+              }
+              this.logger.log(
+                `Stock restaurado para ${orderWithItems.items.length} items de orden ${orderId}`,
+              );
+            }
+          }
           break;
       }
 
@@ -496,6 +517,118 @@ export class OrdersService {
         userRole,
         errorMessage: err.message,
       });
+      throw error;
+    }
+  }
+
+  async updateOrderItem(
+    orderId: string,
+    itemId: string,
+    dto: UpdateOrderItemDto,
+    userRole: Role,
+  ) {
+    this.logger.log(
+      `Actualizando item ${itemId} de orden ${orderId} (rol: ${userRole})`,
+    );
+
+    try {
+      if (userRole !== Role.SUPER_ADMIN) {
+        throw new ForbiddenException(
+          'Solo SUPER_ADMIN puede editar items de órdenes',
+        );
+      }
+
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { items: true },
+      });
+
+      if (!order) throw new NotFoundException('Orden no encontrada');
+
+      const item = order.items.find((i) => i.id === itemId);
+      if (!item) throw new NotFoundException('Item no encontrado en la orden');
+
+      const newVariant = await this.prisma.productVariant.findUnique({
+        where: { id: dto.variantId },
+      });
+
+      if (!newVariant) throw new NotFoundException('Variante no encontrada');
+
+      if (newVariant.stock < item.quantity && newVariant.id !== item.variantId) {
+        throw new BadRequestException(
+          `Stock insuficiente para la variante seleccionada. Disponible: ${newVariant.stock}`,
+        );
+      }
+
+      if (item.variantId !== dto.variantId) {
+        await this.prisma.productVariant.update({
+          where: { id: item.variantId },
+          data: { stock: { increment: item.quantity }, isActive: true },
+        });
+
+        await this.prisma.productVariant.update({
+          where: { id: dto.variantId },
+          data: { stock: { decrement: item.quantity } },
+        });
+
+        const updated = await this.prisma.productVariant.findUnique({
+          where: { id: dto.variantId },
+        });
+        if (updated && updated.stock === 0) {
+          await this.prisma.productVariant.update({
+            where: { id: dto.variantId },
+            data: { isActive: false },
+          });
+        }
+      }
+
+      const newItemSubtotal = Number(newVariant.price) * item.quantity;
+
+      await this.prisma.orderItem.update({
+        where: { id: itemId },
+        data: {
+          variantId: dto.variantId,
+          variantSize: newVariant.size,
+          variantColor: newVariant.color,
+          variantGender: newVariant.gender,
+          price: newVariant.price,
+          subtotal: newItemSubtotal,
+        },
+      });
+
+      const allItems = await this.prisma.orderItem.findMany({
+        where: { orderId },
+      });
+      const newSubtotal = allItems.reduce(
+        (sum, i) => sum + Number(i.subtotal),
+        0,
+      );
+
+      const updatedOrder = await this.prisma.order.update({
+        where: { id: orderId },
+        data: { subtotal: newSubtotal, total: newSubtotal },
+        include: {
+          items: {
+            include: { variant: { include: { product: true } } },
+          },
+          address: true,
+          user: {
+            select: { id: true, email: true, name: true, phone: true },
+          },
+        },
+      });
+
+      this.logger.log(
+        `Item ${itemId} actualizado exitosamente en orden ${orderId}`,
+      );
+
+      return updatedOrder;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error actualizando item ${itemId} de orden ${orderId}`,
+        err.stack,
+      );
       throw error;
     }
   }

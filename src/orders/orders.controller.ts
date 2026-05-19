@@ -16,6 +16,7 @@ import { QueryOrdersDto } from './dto/query-orders.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthRequest } from '../common/interfaces/auth-request.interface';
 import { UpdatePaymentProofDto } from './dto/update-payment-proof.dto';
+import { UpdateOrderItemDto } from './dto/update-order-item.dto';
 
 /**
  * Controlador para gestionar órdenes de compra
@@ -93,6 +94,21 @@ export class OrdersController {
     @Body() dto: UpdateOrderStatusDto,
   ) {
     return this.ordersService.updateOrderStatus(orderId, dto, req.user.role);
+  }
+
+  @Patch(':id/items/:itemId')
+  async updateOrderItem(
+    @Request() req: AuthRequest,
+    @Param('id') orderId: string,
+    @Param('itemId') itemId: string,
+    @Body() dto: UpdateOrderItemDto,
+  ) {
+    return this.ordersService.updateOrderItem(
+      orderId,
+      itemId,
+      dto,
+      req.user.role,
+    );
   }
 
   @Patch(':id/payment-proof')
