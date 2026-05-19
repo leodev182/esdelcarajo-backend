@@ -771,6 +771,55 @@ export class ProductsService {
   /**
    * Elimina una imagen de producto (soft delete)
    */
+  async updateImageVariants(
+    imageId: string,
+    variantIds: string[],
+  ): Promise<ProductImage> {
+    this.logger.log(`Actualizando variantes de imagen ${imageId}`);
+
+    try {
+      const image = await this.prisma.productImage.findUnique({
+        where: { id: imageId },
+        include: { variants: true },
+      });
+
+      if (!image) {
+        throw new NotFoundException(`Imagen con ID "${imageId}" no encontrada`);
+      }
+
+      await this.prisma.productImageVariant.deleteMany({
+        where: { imageId },
+      });
+
+      const updated = await this.prisma.productImage.update({
+        where: { id: imageId },
+        data: {
+          variants: {
+            create: variantIds.map((variantId) => ({
+              variant: { connect: { id: variantId } },
+            })),
+          },
+        },
+        include: {
+          variants: { include: { variant: true } },
+        },
+      });
+
+      this.logger.log(
+        `Imagen ${imageId} ahora asociada a ${variantIds.length} variante(s)`,
+      );
+
+      return updated;
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error(
+        `Error actualizando variantes de imagen ${imageId}`,
+        err.stack,
+      );
+      throw error;
+    }
+  }
+
   async removeImage(id: string): Promise<ProductImage> {
     this.logger.log(`Desactivando imagen ${id}`);
 

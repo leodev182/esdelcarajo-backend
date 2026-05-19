@@ -172,6 +172,22 @@ export class ProductsController {
   }
 
   /**
+   * Actualizar las variantes asociadas a una imagen
+   * @route PATCH /products/images/:id/variants
+   */
+  @Patch('images/:id/variants')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN', 'SUPER_ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Actualizar variantes de una imagen' })
+  updateImageVariants(
+    @Param('id') id: string,
+    @Body() body: { variantIds: string[] },
+  ) {
+    return this.productsService.updateImageVariants(id, body.variantIds);
+  }
+
+  /**
    * Eliminar una imagen de producto (soft delete)
    * @route DELETE /products/images/:id
    */
