@@ -277,10 +277,59 @@ export class AdminService {
     }
   }
 
+  async getSellerStats() {
+    this.logger.log('Consultando estadísticas por vendedor');
+
+    try {
+      const groups = await this.prisma.order.groupBy({
+        by: ['handledByAdminId'],
+        where: {
+          handledByAdminId: { not: null },
+        },
+        _count: { id: true },
+        _sum: { total: true },
+      });
+
+      const adminIds = groups
+        .map((g) => g.handledByAdminId)
+        .filter(Boolean) as string[];
+
+      const admins = await this.prisma.user.findMany({
+        where: { id: { in: adminIds } },
+        select: { id: true, name: true, email: true, role: true },
+      });
+
+      const confirmedGroups = await this.prisma.order.groupBy({
+        by: ['handledByAdminId'],
+        where: {
+          handledByAdminId: { not: null },
+          status: { in: ['PAGO_CONFIRMADO', 'EN_CAMINO', 'ENTREGADO'] },
+        },
+        _sum: { total: true },
+      });
+
+      return groups.map((g) => {
+        const admin = admins.find((a) => a.id === g.handledByAdminId);
+        const confirmed = confirmedGroups.find(
+          (c) => c.handledByAdminId === g.handledByAdminId,
+        );
+        return {
+          admin,
+          totalOrders: g._count.id,
+          revenue: Number(confirmed?._sum?.total ?? 0),
+        };
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      this.logger.error('Error consultando stats por vendedor', err.stack);
+      throw error;
+    }
+  }
+
   /**
    * Aprobar pago de una orden
    */
-  async approvePayment(orderId: string) {
+  async approvePayment(orderId: string, adminId?: string) {
     this.logger.log(`Aprobando pago de orden ${orderId}`);
 
     try {
@@ -307,6 +356,7 @@ export class AdminService {
         data: {
           status: 'PAGO_CONFIRMADO',
           paidAt: new Date(),
+          ...(adminId && { handledByAdminId: adminId }),
         },
         include: {
           user: {
@@ -336,7 +386,7 @@ export class AdminService {
   /**
    * Cambiar estado de una orden
    */
-  async updateOrderStatus(orderId: string, newStatus: OrderStatus) {
+  async updateOrderStatus(orderId: string, newStatus: OrderStatus, adminId?: string) {
     this.logger.log(`Actualizando estado de orden ${orderId} a ${newStatus}`);
 
     try {
@@ -365,11 +415,13 @@ export class AdminService {
 
       const updateData: {
         status: OrderStatus;
+        handledByAdminId?: string;
         shippedAt?: Date;
         deliveredAt?: Date;
         cancelledAt?: Date;
       } = {
         status: newStatus,
+        ...(adminId && { handledByAdminId: adminId }),
       };
 
       if (newStatus === 'EN_CAMINO') {

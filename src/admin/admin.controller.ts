@@ -5,6 +5,7 @@ import {
   Param,
   Body,
   Query,
+  Request,
   UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
@@ -14,6 +15,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { QueryOrdersDto } from './dto/query-orders.dto';
 import { OrderStatus } from '@prisma/client';
+import { AuthRequest } from '../common/interfaces/auth-request.interface';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -38,6 +40,13 @@ export class AdminController {
     return this.adminService.getRecentOrders(parsedLimit);
   }
 
+  @Get('dashboard/seller-stats')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Estadísticas por vendedor (solo SUPER_ADMIN)' })
+  async getSellerStats() {
+    return this.adminService.getSellerStats();
+  }
+
   // ==================== GESTIÓN DE ÓRDENES ====================
 
   @Get('orders')
@@ -56,8 +65,8 @@ export class AdminController {
 
   @Patch('orders/:id/approve-payment')
   @ApiOperation({ summary: 'Aprobar pago de una orden' })
-  async approvePayment(@Param('id') id: string) {
-    return this.adminService.approvePayment(id);
+  async approvePayment(@Param('id') id: string, @Request() req: AuthRequest) {
+    return this.adminService.approvePayment(id, req.user.id);
   }
 
   @Patch('orders/:id/status')
@@ -65,7 +74,8 @@ export class AdminController {
   async updateOrderStatus(
     @Param('id') id: string,
     @Body('status') status: OrderStatus,
+    @Request() req: AuthRequest,
   ) {
-    return this.adminService.updateOrderStatus(id, status);
+    return this.adminService.updateOrderStatus(id, status, req.user.id);
   }
 }
