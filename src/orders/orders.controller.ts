@@ -93,7 +93,12 @@ export class OrdersController {
     @Param('id') orderId: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
-    return this.ordersService.updateOrderStatus(orderId, dto, req.user.role);
+    return this.ordersService.updateOrderStatus(
+      orderId,
+      dto,
+      req.user.role,
+      req.user.id,
+    );
   }
 
   @Patch(':id/items/:itemId')

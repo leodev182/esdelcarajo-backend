@@ -319,6 +319,7 @@ export class OrdersService {
     orderId: string,
     dto: UpdateOrderStatusDto,
     userRole: Role,
+    adminId?: string,
   ) {
     this.logger.log(
       `Actualizando estado de orden ${orderId} a ${dto.status} (rol: ${userRole})`,
@@ -346,6 +347,7 @@ export class OrdersService {
       const updateData: {
         status: OrderStatus;
         adminNotes?: string;
+        handledByAdminId?: string;
         paidAt?: Date;
         shippedAt?: Date;
         deliveredAt?: Date;
@@ -353,6 +355,7 @@ export class OrdersService {
       } = {
         status: dto.status,
         adminNotes: dto.adminNotes,
+        ...(adminId && { handledByAdminId: adminId }),
       };
 
       const now = new Date();
