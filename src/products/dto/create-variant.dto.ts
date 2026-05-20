@@ -4,6 +4,7 @@ import {
   IsUUID,
   IsEnum,
   IsInt,
+  IsNumber,
   Min,
   IsOptional,
   IsHexColor,
@@ -80,10 +81,10 @@ export class CreateVariantDto {
   stock: number;
 
   /**
-   * Precio en Bs o USD (sin decimales, en centavos/céntimos)
-   * @example 2500
+   * Precio en USD con hasta 2 decimales
+   * @example 12.99
    */
-  @IsInt({ message: 'El precio debe ser un número entero' })
+  @IsNumber({ maxDecimalPlaces: 2 }, { message: 'El precio debe ser un número válido (máx 2 decimales)' })
   @Min(0, { message: 'El precio no puede ser negativo' })
   @IsNotEmpty({ message: 'El precio es obligatorio' })
   price: number;
