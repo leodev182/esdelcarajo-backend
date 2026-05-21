@@ -57,6 +57,15 @@ export class QueryProductsDto {
   size?: Size;
 
   /**
+   * Filtrar por estado activo/inactivo
+   * @example true
+   */
+  @IsBoolean({ message: 'isActive debe ser verdadero o falso' })
+  @IsOptional()
+  @Type(() => Boolean)
+  isActive?: boolean;
+
+  /**
    * Solo productos destacados
    * @example true
    */
