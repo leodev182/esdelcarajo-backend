@@ -630,11 +630,12 @@ export class ProductsService {
    * Elimina una variante (soft delete)
    */
   async removeVariant(id: string): Promise<ProductVariant> {
-    this.logger.log(`Desactivando variante ${id}`);
+    this.logger.log(`Eliminando variante ${id}`);
 
     try {
       const variant = await this.prisma.productVariant.findUnique({
         where: { id },
+        include: { _count: { select: { orderItems: true } } },
       });
 
       if (!variant) {
@@ -642,17 +643,23 @@ export class ProductsService {
         throw new NotFoundException(`Variante con ID "${id}" no encontrada`);
       }
 
-      const deletedVariant = await this.prisma.productVariant.update({
-        where: { id },
-        data: { isActive: false },
-      });
+      // Si tiene órdenes asociadas, soft delete para preservar historial
+      if (variant._count.orderItems > 0) {
+        const softDeleted = await this.prisma.productVariant.update({
+          where: { id },
+          data: { isActive: false },
+        });
+        this.logger.log(`Variante ${id} desactivada (tiene ${variant._count.orderItems} órdenes)`);
+        return softDeleted;
+      }
 
-      this.logger.log(`Variante ${id} desactivada exitosamente`);
-
-      return deletedVariant;
+      // Sin órdenes: hard delete para liberar el SKU
+      const deleted = await this.prisma.productVariant.delete({ where: { id } });
+      this.logger.log(`Variante ${id} eliminada definitivamente`);
+      return deleted;
     } catch (error) {
       const err = error instanceof Error ? error : new Error('Unknown error');
-      this.logger.error(`Error desactivando variante ${id}`, err.stack, { id });
+      this.logger.error(`Error eliminando variante ${id}`, err.stack, { id });
       throw error;
     }
   }
