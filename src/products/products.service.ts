@@ -514,12 +514,10 @@ export class ProductsService {
         );
       }
 
-      const isActive: boolean = createVariantDto.stock > 0;
-
       const variant = await this.prisma.productVariant.create({
         data: {
           ...createVariantDto,
-          isActive,
+          isActive: true,
         },
       });
 
@@ -597,24 +595,10 @@ export class ProductsService {
         }
       }
 
-      const isActive: boolean =
-        updateVariantDto.stock !== undefined
-          ? updateVariantDto.stock > 0
-          : variant.stock > 0;
-
       const updatedVariant = await this.prisma.productVariant.update({
         where: { id },
-        data: {
-          ...updateVariantDto,
-          isActive,
-        },
+        data: updateVariantDto,
       });
-
-      if (updateVariantDto.stock === 0) {
-        this.logger.warn(
-          `Variante ${id} desactivada automáticamente por stock 0`,
-        );
-      }
 
       this.logger.log(`Variante ${id} actualizada exitosamente`);
 
