@@ -154,19 +154,6 @@ export class OrdersService {
           },
         });
 
-        const updatedVariant = await this.prisma.productVariant.findUnique({
-          where: { id: item.variantId },
-        });
-
-        if (updatedVariant && updatedVariant.stock === 0) {
-          this.logger.warn(
-            `Variante ${item.variantId} agotada - Desactivando producto`,
-          );
-          await this.prisma.productVariant.update({
-            where: { id: item.variantId },
-            data: { isActive: false },
-          });
-        }
       }
 
       await this.prisma.cartItem.deleteMany({
@@ -385,10 +372,7 @@ export class OrdersService {
               for (const item of orderWithItems.items) {
                 await this.prisma.productVariant.update({
                   where: { id: item.variantId },
-                  data: {
-                    stock: { increment: item.quantity },
-                    isActive: true,
-                  },
+                  data: { stock: { increment: item.quantity } },
                 });
               }
               this.logger.log(
@@ -570,23 +554,13 @@ export class OrdersService {
       if (item.variantId !== dto.variantId) {
         await this.prisma.productVariant.update({
           where: { id: item.variantId },
-          data: { stock: { increment: item.quantity }, isActive: true },
+          data: { stock: { increment: item.quantity } },
         });
 
         await this.prisma.productVariant.update({
           where: { id: dto.variantId },
           data: { stock: { decrement: item.quantity } },
         });
-
-        const updated = await this.prisma.productVariant.findUnique({
-          where: { id: dto.variantId },
-        });
-        if (updated && updated.stock === 0) {
-          await this.prisma.productVariant.update({
-            where: { id: dto.variantId },
-            data: { isActive: false },
-          });
-        }
       }
 
       const newItemSubtotal = Number(newVariant.price) * item.quantity;
