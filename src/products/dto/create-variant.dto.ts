@@ -45,8 +45,8 @@ export class CreateVariantDto {
    * @example "Negro"
    */
   @IsString({ message: 'El color debe ser un texto' })
-  @IsNotEmpty({ message: 'El color es obligatorio' })
-  color: string;
+  @IsOptional()
+  color?: string;
 
   /**
    * Código hexadecimal del color (opcional)
@@ -57,8 +57,8 @@ export class CreateVariantDto {
   colorHex?: string;
 
   @IsString({ message: 'El color de franela debe ser un texto' })
-  @IsOptional()
-  shirtColor?: string;
+  @IsNotEmpty({ message: 'El color de franela es obligatorio' })
+  shirtColor: string;
 
   /**
    * SKU único de la variante
