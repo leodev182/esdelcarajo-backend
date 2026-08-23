@@ -5,8 +5,9 @@ export class CreateLandingSectionDto {
   @IsEnum(SectionType)
   type: SectionType;
 
+  @IsOptional()
   @IsString()
-  title: string;
+  title?: string;
 
   @IsOptional()
   @IsString()
