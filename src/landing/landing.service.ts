@@ -162,12 +162,13 @@ export class LandingService {
         );
       }
 
-      if (section.images.length >= 5) {
+      const maxImages = section.type === 'GALLERY' ? 20 : 5;
+      if (section.images.length >= maxImages) {
         this.logger.warn(
-          `Sección ${addImageDto.sectionId} ya tiene 5 imágenes`,
+          `Sección ${addImageDto.sectionId} ya tiene ${maxImages} imágenes`,
         );
         throw new BadRequestException(
-          'No se pueden agregar más de 5 imágenes por sección',
+          `No se pueden agregar más de ${maxImages} imágenes por sección`,
         );
       }
 

@@ -419,6 +419,7 @@ enum SectionType {
   CAROUSEL
   CUSTOM
   VIDEO
+  GALLERY
 }
 
 enum TextPosition {
