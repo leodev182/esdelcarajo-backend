@@ -14,6 +14,7 @@ import { Request, Response } from 'express';
 import { User } from '@prisma/client';
 import { AuthService } from './auth.service';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
+import { GoogleCallbackGuard } from './guards/google-callback.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 
 interface RequestWithUser extends Request {
@@ -33,7 +34,7 @@ export class AuthController {
    * Genera tokens y guarda refresh_token en HttpOnly Cookie
    */
   @Get('google/callback')
-  @UseGuards(GoogleAuthGuard)
+  @UseGuards(GoogleCallbackGuard)
   async googleAuthCallback(@Req() req: RequestWithUser, @Res() res: Response) {
     const user = req.user;
     const loginResponse = await this.authService.login(user);
