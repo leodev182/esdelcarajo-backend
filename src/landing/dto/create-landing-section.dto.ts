@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsOptional, IsInt, Min, Max } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsInt, IsUrl, Min } from 'class-validator';
 import { SectionType, TextPosition } from '@prisma/client';
 
 export class CreateLandingSectionDto {
@@ -18,6 +18,10 @@ export class CreateLandingSectionDto {
 
   @IsString()
   bgColor: string;
+
+  @IsOptional()
+  @IsUrl()
+  videoUrl?: string;
 
   @IsInt()
   @Min(0)

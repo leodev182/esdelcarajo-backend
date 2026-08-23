@@ -418,6 +418,7 @@ model ExchangeRate {
 enum SectionType {
   CAROUSEL
   CUSTOM
+  VIDEO
 }
 
 enum TextPosition {
@@ -435,6 +436,7 @@ model LandingSection {
   description  String?      @db.Text
   textPosition TextPosition @default(CENTER)
   bgColor      String       @default("#FFFFFF")
+  videoUrl     String?
   order        Int          @default(0)
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
