@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLandingSectionDto } from './dto/create-landing-section.dto';
 import { UpdateLandingSectionDto } from './dto/update-landing-section.dto';
 import { AddSectionImageDto } from './dto/add-section-image.dto';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class LandingService {
@@ -20,7 +21,10 @@ export class LandingService {
 
     try {
       const section = await this.prisma.landingSection.create({
-        data: createDto,
+        data: {
+          ...createDto,
+          title: createDto.title ?? '',
+        } as Prisma.LandingSectionUncheckedCreateInput,
         include: {
           images: {
             orderBy: { order: 'asc' },
