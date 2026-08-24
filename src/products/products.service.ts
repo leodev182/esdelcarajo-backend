@@ -458,11 +458,14 @@ export class ProductsService {
     this.logger.log(`Desactivando producto ${id}`);
 
     try {
-      await this.findOne(id);
+      const existing = await this.findOne(id);
+
+      // Liberar el slug añadiendo sufijo para que pueda reutilizarse
+      const freedSlug = `${existing.slug}--deleted-${id.slice(0, 8)}`;
 
       const product = await this.prisma.product.update({
         where: { id },
-        data: { isActive: false },
+        data: { isActive: false, slug: freedSlug },
       });
 
       this.logger.log(`Producto ${id} desactivado exitosamente`);
@@ -707,24 +710,17 @@ export class ProductsService {
         );
       }
 
-      const existingImageWithOrder = product.images.find(
-        (img) => img.order === createImageDto.order,
-      );
+      // Calcular order automáticamente para evitar conflictos
+      const nextOrder = product.images.length > 0
+        ? Math.max(...product.images.map((img) => img.order)) + 1
+        : 1;
 
-      if (existingImageWithOrder) {
-        this.logger.warn(
-          `Orden ${createImageDto.order} ya existe para producto ${createImageDto.productId}`,
-        );
-        throw new ConflictException(
-          `Ya existe una imagen con orden ${createImageDto.order} para este producto`,
-        );
-      }
-
-      const { variantIds, ...imageData } = createImageDto;
+      const { variantIds, order: _order, ...imageData } = createImageDto;
 
       const image = await this.prisma.productImage.create({
         data: {
           ...imageData,
+          order: nextOrder,
           ...(variantIds &&
             variantIds.length > 0 && {
               variants: {
