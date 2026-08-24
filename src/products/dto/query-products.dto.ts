@@ -65,6 +65,11 @@ export class QueryProductsDto {
   @Type(() => Boolean)
   isActive?: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  includeAll?: boolean;
+
   /**
    * Solo productos destacados
    * @example true

@@ -51,14 +51,14 @@ export class ProductsService {
       const slug: string = this.generateSlug(createProductDto.name);
 
       const existingProduct: Product | null =
-        await this.prisma.product.findUnique({
-          where: { slug },
+        await this.prisma.product.findFirst({
+          where: { slug, isActive: true },
         });
 
       if (existingProduct) {
-        this.logger.warn(`Producto con slug "${slug}" ya existe`);
+        this.logger.warn(`Producto activo con slug "${slug}" ya existe`);
         throw new ConflictException(
-          `Ya existe un producto con el slug "${slug}"`,
+          `Ya existe un producto activo con el nombre "${createProductDto.name}"`,
         );
       }
 
@@ -146,6 +146,7 @@ export class ProductsService {
         size,
         isFeatured,
         inStock,
+        includeAll,
         page = 1,
         limit = 12,
         sortBy = 'createdAt',
@@ -155,7 +156,7 @@ export class ProductsService {
       const skip: number = (page - 1) * limit;
 
       type WhereClause = {
-        isActive: boolean;
+        isActive?: boolean;
         OR?: Array<{
           name?: { contains: string; mode: 'insensitive' };
           description?: { contains: string; mode: 'insensitive' };
@@ -174,7 +175,7 @@ export class ProductsService {
       };
 
       const where: WhereClause = {
-        isActive: true,
+        ...(includeAll ? {} : { isActive: query.isActive ?? true }),
       };
 
       if (search) {
@@ -380,14 +381,15 @@ export class ProductsService {
           await this.prisma.product.findFirst({
             where: {
               slug,
+              isActive: true,
               NOT: { id },
             },
           });
 
         if (existingProduct) {
-          this.logger.warn(`Slug "${slug}" ya existe en otro producto`);
+          this.logger.warn(`Slug "${slug}" ya existe en otro producto activo`);
           throw new ConflictException(
-            `Ya existe un producto con el slug "${slug}"`,
+            `Ya existe un producto activo con ese nombre`,
           );
         }
       }
@@ -503,14 +505,14 @@ export class ProductsService {
       }
 
       const existingVariant: ProductVariant | null =
-        await this.prisma.productVariant.findUnique({
-          where: { sku: createVariantDto.sku },
+        await this.prisma.productVariant.findFirst({
+          where: { sku: createVariantDto.sku, isActive: true },
         });
 
       if (existingVariant) {
-        this.logger.warn(`SKU "${createVariantDto.sku}" ya existe`);
+        this.logger.warn(`SKU "${createVariantDto.sku}" ya existe en variante activa`);
         throw new ConflictException(
-          `Ya existe una variante con el SKU "${createVariantDto.sku}"`,
+          `Ya existe una variante activa con el SKU "${createVariantDto.sku}"`,
         );
       }
 
@@ -583,14 +585,14 @@ export class ProductsService {
 
       if (updateVariantDto.sku && updateVariantDto.sku !== variant.sku) {
         const existingVariant: ProductVariant | null =
-          await this.prisma.productVariant.findUnique({
-            where: { sku: updateVariantDto.sku },
+          await this.prisma.productVariant.findFirst({
+            where: { sku: updateVariantDto.sku, isActive: true, NOT: { id } },
           });
 
         if (existingVariant) {
-          this.logger.warn(`SKU "${updateVariantDto.sku}" ya existe`);
+          this.logger.warn(`SKU "${updateVariantDto.sku}" ya existe en variante activa`);
           throw new ConflictException(
-            `Ya existe una variante con el SKU "${updateVariantDto.sku}"`,
+            `Ya existe una variante activa con el SKU "${updateVariantDto.sku}"`,
           );
         }
       }
