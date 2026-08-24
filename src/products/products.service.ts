@@ -18,7 +18,7 @@ import { CreateVariantDto } from './dto/create-variant.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
 import { CreateProductImageDto } from './dto/create-product-image.dto';
 import { QueryProductsDto } from './dto/query-products.dto';
-import { Product, ProductVariant, ProductImage } from '@prisma/client';
+import { Product, ProductVariant, ProductImage, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ProductsService {
@@ -103,7 +103,7 @@ export class ProductsService {
         data: {
           ...createProductDto,
           slug,
-        },
+        } as Prisma.ProductUncheckedCreateInput,
         include: {
           category: true,
           subcategory: true,
@@ -520,7 +520,7 @@ export class ProductsService {
         data: {
           ...createVariantDto,
           isActive: true,
-        },
+        } as Prisma.ProductVariantUncheckedCreateInput,
       });
 
       this.logger.log(
@@ -735,7 +735,7 @@ export class ProductsService {
                 })),
               },
             }),
-        },
+        } as any,
         include: {
           variants: {
             include: {
