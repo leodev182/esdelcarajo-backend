@@ -6,9 +6,11 @@ import {
   HttpStatus,
   Logger,
   Optional,
+  ConflictException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { LogLevel, LogEvent } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { LogsService } from '../../logs/logs.service';
 
 /**
@@ -30,6 +32,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const request = ctx.getRequest<Request & { _startTime?: number; user?: { id: string; email: string; role: string } }>();
     const response = ctx.getResponse<Response>();
 
+    // Convertir errores Prisma conocidos a HttpException apropiadas
+    if (exception instanceof Prisma.PrismaClientKnownRequestError) {
+      if (exception.code === 'P2002') {
+        const fields = (exception.meta?.target as string[])?.join(', ') ?? 'campo';
+        const conflict = new ConflictException(
+          `Ya existe un registro con el mismo valor en: ${fields}`,
+        );
+        return this.catch(conflict, host);
+      }
+    }
+
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
@@ -38,9 +51,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const errorMessage =
       exception instanceof HttpException
         ? this.extractHttpMessage(exception)
-        : exception instanceof Error
-          ? exception.message
-          : 'Internal server error';
+        : exception instanceof Prisma.PrismaClientKnownRequestError
+          ? `Prisma ${exception.code}: ${exception.message}`
+          : exception instanceof Error
+            ? exception.message
+            : 'Internal server error';
 
     // 401 es flujo normal de auth — no loguear
     // 5xx → ERROR, 4xx (sin 401) → WARN
