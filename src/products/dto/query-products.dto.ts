@@ -8,8 +8,14 @@ import {
   Min,
   Max,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { Gender, Size } from '@prisma/client';
+
+const toBoolean = ({ value }: { value: unknown }) => {
+  if (value === 'true' || value === true) return true;
+  if (value === 'false' || value === false) return false;
+  return value;
+};
 
 /**
  * DTO para consultar y filtrar productos
@@ -62,12 +68,12 @@ export class QueryProductsDto {
    */
   @IsBoolean({ message: 'isActive debe ser verdadero o falso' })
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(toBoolean)
   isActive?: boolean;
 
   @IsBoolean()
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(toBoolean)
   includeAll?: boolean;
 
   /**
@@ -76,7 +82,7 @@ export class QueryProductsDto {
    */
   @IsBoolean({ message: 'isFeatured debe ser verdadero o falso' })
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(toBoolean)
   isFeatured?: boolean;
 
   /**
@@ -85,7 +91,7 @@ export class QueryProductsDto {
    */
   @IsBoolean({ message: 'inStock debe ser verdadero o falso' })
   @IsOptional()
-  @Type(() => Boolean)
+  @Transform(toBoolean)
   inStock?: boolean;
 
   /**
