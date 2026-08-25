@@ -181,7 +181,9 @@ export class ProductsService {
       };
 
       const where: WhereClause = {
-        ...(includeAll ? {} : { isActive: query.isActive ?? true }),
+        ...(includeAll
+          ? (query.isActive !== undefined ? { isActive: query.isActive } : {})
+          : { isActive: query.isActive ?? true }),
       };
 
       if (search) {
