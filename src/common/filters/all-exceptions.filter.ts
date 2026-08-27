@@ -85,6 +85,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       });
     }
 
+    if (response.headersSent) return;
+
     const responseBody =
       exception instanceof HttpException
         ? exception.getResponse()
