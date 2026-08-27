@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
+import * as Sentry from '@sentry/nestjs';
 
 @Injectable()
 export class GoogleCallbackGuard extends AuthGuard('google') {
@@ -18,6 +19,7 @@ export class GoogleCallbackGuard extends AuthGuard('google') {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       this.logger.warn(`Google OAuth callback falló: ${err.message}`);
+      Sentry.captureException(err, { tags: { flow: 'google-oauth-callback' } });
       this.redirectToError(context);
       // Lanzar HttpException en vez de retornar false:
       // retornar false hace que NestJS lance ForbiddenException e intente enviar 403
@@ -34,8 +36,14 @@ export class GoogleCallbackGuard extends AuthGuard('google') {
     context: ExecutionContext,
   ): TUser {
     if (err || !user) {
-      const msg = err?.message ?? (info instanceof Error ? info.message : String(info ?? 'unknown'));
-      this.logger.warn(`Google OAuth handleRequest falló: ${msg}`);
+      const oauthError =
+        err instanceof Error
+          ? err
+          : info instanceof Error
+            ? info
+            : new Error(String(err ?? info ?? 'Google OAuth: no user returned'));
+      this.logger.warn(`Google OAuth handleRequest falló: ${oauthError.message}`);
+      Sentry.captureException(oauthError, { tags: { flow: 'google-oauth-handle-request' } });
       this.redirectToError(context);
       throw new HttpException('OAuth redirect', HttpStatus.FOUND);
     }
