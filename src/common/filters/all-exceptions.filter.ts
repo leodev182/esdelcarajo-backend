@@ -11,6 +11,7 @@ import {
 import { Request, Response } from 'express';
 import { LogLevel, LogEvent } from '@prisma/client';
 import { Prisma } from '@prisma/client';
+import * as Sentry from '@sentry/nestjs';
 import { LogsService } from '../../logs/logs.service';
 
 /**
@@ -60,6 +61,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
     // 401 es flujo normal de auth — no loguear
     // 5xx → ERROR, 4xx (sin 401) → WARN
     const shouldLog = status >= 500 || (status >= 400 && status !== 401);
+
+    if (status >= 500) {
+      const sentryError =
+        exception instanceof Error
+          ? exception
+          : new Error(
+              typeof exception === 'string'
+                ? exception
+                : JSON.stringify(exception),
+            );
+      Sentry.captureException(sentryError, {
+        extra: {
+          url: request.url,
+          method: request.method,
+          statusCode: status,
+          userId: request.user?.id,
+          userEmail: request.user?.email,
+        },
+      });
+    }
 
     if (shouldLog && this.logsService) {
       const level = status >= 500 ? LogLevel.ERROR : LogLevel.WARN;
