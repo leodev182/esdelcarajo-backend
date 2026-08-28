@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
-import { Strategy, VerifyCallback, Profile } from 'passport-google-oauth20';
+import { Strategy, Profile } from 'passport-google-oauth20';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -80,13 +80,12 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     accessToken: string,
     refreshToken: string,
     profile: GoogleProfile,
-    done: VerifyCallback,
   ): Promise<any> {
     const { id, name, emails, photos } = profile;
 
     if (!emails || emails.length === 0) {
       this.logger.error('Usuario sin email en Google OAuth');
-      return done(new Error('No se pudo obtener el email de Google'), null);
+      throw new Error('No se pudo obtener el email de Google');
     }
 
     const email = emails[0].value;
@@ -95,69 +94,63 @@ export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
     const isSuperAdmin = this.superAdminEmails.includes(email.toLowerCase());
     const role: Role = isSuperAdmin ? Role.SUPER_ADMIN : Role.USER;
 
-    try {
-      let user = await this.prisma.user.findUnique({
-        where: { googleId: id },
-      });
+    let user = await this.prisma.user.findUnique({
+      where: { googleId: id },
+    });
 
-      if (!user) {
-        user = await this.prisma.user.create({
-          data: {
-            email,
-            googleId: id,
-            name:
-              name?.givenName && name?.familyName
-                ? `${name.givenName} ${name.familyName}`
-                : profile.displayName || null,
-            avatar,
-            role,
-          },
-        });
-
-        if (isSuperAdmin) {
-          this.logger.log(`🔥 Nuevo SUPER_ADMIN creado: ${email}`);
-        } else {
-          this.logger.log(`Nuevo usuario creado: ${email}`);
-        }
-
-        await this.mailService.sendWelcomeEmail(
-          user.email,
-          user.name || 'Cliente',
-        );
-
-        this.eventEmitter.emit(
-          UserRegisteredEvent.EVENT,
-          new UserRegisteredEvent(user.id, user.email, user.role),
-        );
-      } else {
-        const updateData: {
-          name?: string;
-          avatar?: string;
-          role?: Role;
-        } = {
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          googleId: id,
           name:
             name?.givenName && name?.familyName
               ? `${name.givenName} ${name.familyName}`
-              : profile.displayName || user.name,
-          avatar: avatar || user.avatar,
-        };
+              : profile.displayName || null,
+          avatar,
+          role,
+        },
+      });
 
-        if (isSuperAdmin && user.role !== Role.SUPER_ADMIN) {
-          updateData.role = Role.SUPER_ADMIN;
-          this.logger.log(`🔥 Usuario promovido a SUPER_ADMIN: ${email}`);
-        }
-
-        user = await this.prisma.user.update({
-          where: { id: user.id },
-          data: updateData,
-        });
+      if (isSuperAdmin) {
+        this.logger.log(`Nuevo SUPER_ADMIN creado: ${email}`);
+      } else {
+        this.logger.log(`Nuevo usuario creado: ${email}`);
       }
 
-      done(null, user);
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error('Unknown error');
-      this.logger.error(`Error en Google OAuth para ${email}`, err.stack);
-      done(error, null);
+      await this.mailService.sendWelcomeEmail(
+        user.email,
+        user.name || 'Cliente',
+      );
+
+      this.eventEmitter.emit(
+        UserRegisteredEvent.EVENT,
+        new UserRegisteredEvent(user.id, user.email, user.role),
+      );
+    } else {
+      const updateData: {
+        name?: string;
+        avatar?: string;
+        role?: Role;
+      } = {
+        name:
+          name?.givenName && name?.familyName
+            ? `${name.givenName} ${name.familyName}`
+            : profile.displayName || user.name,
+        avatar: avatar || user.avatar,
+      };
+
+      if (isSuperAdmin && user.role !== Role.SUPER_ADMIN) {
+        updateData.role = Role.SUPER_ADMIN;
+        this.logger.log(`Usuario promovido a SUPER_ADMIN: ${email}`);
+      }
+
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: updateData,
+      });
     }
+
+    return user;
   }
 }
