@@ -455,4 +455,53 @@ export class AdminService {
       throw error;
     }
   }
+
+  // ==================== GESTIÓN DE CARRITOS ====================
+
+  async getUserCart(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const cart = await this.prisma.cart.findUnique({
+      where: { userId },
+      include: {
+        items: {
+          include: {
+            variant: {
+              include: {
+                product: { select: { id: true, name: true, slug: true } },
+                images: { take: 1, select: { url: true } },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return {
+      user: { id: user.id, email: user.email, name: user.name },
+      cart: cart ?? null,
+      itemCount: cart?.items.length ?? 0,
+    };
+  }
+
+  async removeCartItem(userId: string, itemId: string) {
+    const item = await this.prisma.cartItem.findFirst({
+      where: { id: itemId, cart: { userId } },
+    });
+    if (!item) throw new NotFoundException('Item no encontrado en el carrito del usuario');
+
+    await this.prisma.cartItem.delete({ where: { id: itemId } });
+    this.logger.log(`Admin eliminó item ${itemId} del carrito de usuario ${userId}`);
+    return { message: 'Item eliminado del carrito' };
+  }
+
+  async clearUserCart(userId: string) {
+    const cart = await this.prisma.cart.findUnique({ where: { userId } });
+    if (!cart) throw new NotFoundException('El usuario no tiene carrito activo');
+
+    const result = await this.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+    this.logger.log(`Admin vació carrito de usuario ${userId} — ${result.count} items eliminados`);
+    return { message: `Carrito vaciado — ${result.count} items eliminados` };
+  }
 }

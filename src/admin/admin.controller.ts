@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Patch,
+  Delete,
   Param,
   Body,
   Query,
@@ -77,5 +78,31 @@ export class AdminController {
     @Request() req: AuthRequest,
   ) {
     return this.adminService.updateOrderStatus(id, status, req.user.id);
+  }
+
+  // ==================== GESTIÓN DE CARRITOS ====================
+
+  @Get('users/:userId/cart')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Ver carrito de un usuario' })
+  async getUserCart(@Param('userId') userId: string) {
+    return this.adminService.getUserCart(userId);
+  }
+
+  @Delete('users/:userId/cart/items/:itemId')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Eliminar un item del carrito de un usuario' })
+  async removeCartItem(
+    @Param('userId') userId: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.adminService.removeCartItem(userId, itemId);
+  }
+
+  @Delete('users/:userId/cart')
+  @Roles('SUPER_ADMIN')
+  @ApiOperation({ summary: 'Vaciar el carrito de un usuario' })
+  async clearUserCart(@Param('userId') userId: string) {
+    return this.adminService.clearUserCart(userId);
   }
 }
