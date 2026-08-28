@@ -40,9 +40,7 @@ export class AuthController {
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-    if (res.headersSent) {
-      return res.redirect(`${frontendUrl}/auth/callback`);
-    }
+    if (res.headersSent) return;
 
     const loginResponse = await this.authService.login(user);
 
