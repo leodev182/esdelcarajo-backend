@@ -37,6 +37,13 @@ export class AuthController {
   @UseGuards(GoogleCallbackGuard)
   async googleAuthCallback(@Req() req: RequestWithUser, @Res() res: Response) {
     const user = req.user;
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    if (res.headersSent) {
+      return res.redirect(`${frontendUrl}/auth/callback`);
+    }
+
     const loginResponse = await this.authService.login(user);
 
     const isProduction = process.env.NODE_ENV === 'production';
@@ -57,7 +64,6 @@ export class AuthController {
       path: '/api/auth',
     });
 
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     return res.redirect(`${frontendUrl}/auth/callback`);
   }
 
