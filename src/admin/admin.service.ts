@@ -468,9 +468,16 @@ export class AdminService {
         items: {
           include: {
             variant: {
-              include: {
+              select: {
+                id: true,
+                size: true,
+                stock: true,
+                price: true,
                 product: { select: { id: true, name: true, slug: true } },
-                images: { take: 1, select: { url: true } },
+                images: {
+                  take: 1,
+                  select: { image: { select: { url: true } } },
+                },
               },
             },
           },
@@ -481,7 +488,7 @@ export class AdminService {
     return {
       user: { id: user.id, email: user.email, name: user.name },
       cart: cart ?? null,
-      itemCount: cart?.items.length ?? 0,
+      itemCount: cart ? cart.items.length : 0,
     };
   }
 
