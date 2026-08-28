@@ -437,6 +437,7 @@ model LandingSection {
   description  String?      @db.Text
   textPosition TextPosition @default(CENTER)
   bgColor      String       @default("#FFFFFF")
+  fontFamily   String?
   videoUrl     String?
   order        Int          @default(0)
   isActive     Boolean      @default(true)

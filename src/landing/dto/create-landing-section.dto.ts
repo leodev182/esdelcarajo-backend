@@ -21,6 +21,10 @@ export class CreateLandingSectionDto {
 
   @IsOptional()
   @IsString()
+  fontFamily?: string;
+
+  @IsOptional()
+  @IsString()
   videoUrl?: string;
 
   @IsInt()
