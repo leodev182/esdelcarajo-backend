@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { User, Prisma } from '@prisma/client';
+import { User } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { LoginResponseDto } from './dto/login-response.dto';
 import { UserLoginEvent } from '../events/auth.events';
@@ -121,21 +121,17 @@ export class AuthService {
         throw new UnauthorizedException('Usuario inactivo');
       }
 
-      try {
-        await this.prisma.refreshToken.delete({
-          where: { id: storedToken.id },
-        });
-      } catch (error) {
-        if (
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2025'
-        ) {
-          this.logger.warn(
-            `Race condition en refresh: token ${storedToken.id} ya fue consumido`,
-          );
-          throw new UnauthorizedException('Refresh token ya fue utilizado');
-        }
-        throw error;
+      // deleteMany es atómico a nivel SQL: si dos requests llegan con el mismo
+      // token, solo uno obtiene count:1. El otro obtiene count:0 → 401 limpio.
+      const deleted = await this.prisma.refreshToken.deleteMany({
+        where: { id: storedToken.id },
+      });
+
+      if (deleted.count === 0) {
+        this.logger.warn(
+          `Race condition en refresh: token ${storedToken.id} ya fue consumido`,
+        );
+        throw new UnauthorizedException('Refresh token ya fue utilizado');
       }
 
       this.logger.log(
