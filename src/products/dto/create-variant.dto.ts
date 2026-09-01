@@ -10,6 +10,7 @@ import {
   IsHexColor,
   Matches,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { Gender, Size } from '@prisma/client';
 
 /**
@@ -56,6 +57,7 @@ export class CreateVariantDto {
   @IsOptional()
   colorHex?: string;
 
+  @Transform(({ value }) => (typeof value === 'string' ? value.toUpperCase() : value))
   @IsString({ message: 'El color de franela debe ser un texto' })
   @IsNotEmpty({ message: 'El color de franela es obligatorio' })
   shirtColor: string;
