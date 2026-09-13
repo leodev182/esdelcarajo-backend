@@ -312,6 +312,13 @@ export class CartService {
 
       return this.getCartWithTotals(userId);
     } catch (error) {
+      if (
+        error instanceof Object &&
+        'code' in error &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Item del carrito no encontrado');
+      }
       const err = error instanceof Error ? error : new Error('Unknown error');
       this.logger.error(
         `Error eliminando item ${itemId} para usuario ${userId}`,
