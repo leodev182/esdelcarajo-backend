@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { LandingService } from './landing.service';
+import { CreatePartnerDto } from './dto/create-partner.dto';
 import { CreateLandingSectionDto } from './dto/create-landing-section.dto';
 import { UpdateLandingSectionDto } from './dto/update-landing-section.dto';
 import { AddSectionImageDto } from './dto/add-section-image.dto';
@@ -83,5 +84,33 @@ export class LandingController {
   @ApiOperation({ summary: 'Eliminar imagen de sección (SUPER_ADMIN)' })
   removeImage(@Param('id') id: string) {
     return this.landingService.removeImage(id);
+  }
+
+  // ── Partners ──────────────────────────────────────
+
+  @Get('partners')
+  @ApiOperation({ summary: 'Obtener partners activos (público)' })
+  getPartners() {
+    return this.landingService.getPartners();
+  }
+
+  @Post('partners')
+  @HttpCode(HttpStatus.CREATED)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Crear partner (SUPER_ADMIN)' })
+  createPartner(@Body() dto: CreatePartnerDto) {
+    return this.landingService.createPartner(dto);
+  }
+
+  @Delete('partners/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Eliminar partner (SUPER_ADMIN)' })
+  removePartner(@Param('id') id: string) {
+    return this.landingService.removePartner(id);
   }
 }

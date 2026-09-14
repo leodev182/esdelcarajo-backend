@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CreateLandingSectionDto } from './dto/create-landing-section.dto';
 import { UpdateLandingSectionDto } from './dto/update-landing-section.dto';
 import { AddSectionImageDto } from './dto/add-section-image.dto';
+import { CreatePartnerDto } from './dto/create-partner.dto';
 import { Prisma } from '@prisma/client';
 
 @Injectable()
@@ -194,6 +195,34 @@ export class LandingService {
       );
       throw error;
     }
+  }
+
+  async getPartners() {
+    return this.prisma.partner.findMany({
+      where: { isActive: true },
+      orderBy: { order: 'asc' },
+    });
+  }
+
+  async createPartner(dto: CreatePartnerDto) {
+    this.logger.log(`Creando partner con imagen ${dto.imageUrl}`);
+    const count = await this.prisma.partner.count();
+    return this.prisma.partner.create({
+      data: {
+        imageUrl: dto.imageUrl,
+        publicId: dto.publicId,
+        linkUrl: dto.linkUrl,
+        order: dto.order ?? count,
+      },
+    });
+  }
+
+  async removePartner(id: string) {
+    const partner = await this.prisma.partner.findUnique({ where: { id } });
+    if (!partner) throw new NotFoundException(`Partner ${id} no encontrado`);
+    await this.prisma.partner.delete({ where: { id } });
+    this.logger.log(`Partner ${id} eliminado`);
+    return { publicId: partner.publicId };
   }
 
   async removeImage(imageId: string) {
